@@ -1,0 +1,5 @@
+export PYTHONPATH=/home/zhangyanqi/Projects/eLLM_dev:$PYTHONPATH
+python3 _eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 8  --log-path ../logs/param_tune/llama3-8b --kbits-high 8 --vbits-high 8 --kbits-low 8 --vbits-low 8 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 8192 --target-mem-util 1.0
+python3 _eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 8  --log-path ../logs/param_tune/llama3-8b --kbits-high 8 --vbits-high 4 --kbits-low 8 --vbits-low 4 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 8192 --target-mem-util 1.0
+python3 _eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 8  --log-path ../logs/param_tune/llama3-8b --kbits-high 4 --vbits-high 4 --kbits-low 4 --vbits-low 4 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 8192 --target-mem-util 1.0
+python3 _eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 8  --log-path ../logs/param_tune/llama3-8b --kbits-high 4 --vbits-high 2 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 8192 --target-mem-util 1.0

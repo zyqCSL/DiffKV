@@ -1,0 +1,4 @@
+export PYTHONPATH=/home/zhangyanqi/Projects/eLLM:$PYTHONPATH
+# humaneval 84-42
+python3 eval_codegen.py --dataset humaneval --model-gen 3 --model-size 70  --log-path ../logs/new_kernel_param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.5 --kv-buffer 32 --target-mem-util 0.1 --rounds 5
+# python3 eval_codegen.py --dataset humaneval --model-gen 3 --model-size 70  --log-path ../logs/new_kernel_param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.7 --kv-buffer 32 --target-mem-util 0.1 --rounds 5

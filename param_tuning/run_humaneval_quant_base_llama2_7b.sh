@@ -1,0 +1,5 @@
+export PYTHONPATH=/home/zhangyanqi/Projects/eLLM_dev:$PYTHONPATH
+python3 eval_codegen.py --dataset humaneval --model-gen 2 --model-size 7  --log-path ../logs/param_tune/llama2-7b --kbits-high 8 --vbits-high 8 --kbits-low 8 --vbits-low 8 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 4096 --target-mem-util 1.0
+python3 eval_codegen.py --dataset humaneval --model-gen 2 --model-size 7  --log-path ../logs/param_tune/llama2-7b --kbits-high 8 --vbits-high 4 --kbits-low 8 --vbits-low 4 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 4096 --target-mem-util 1.0
+python3 eval_codegen.py --dataset humaneval --model-gen 2 --model-size 7  --log-path ../logs/param_tune/llama2-7b --kbits-high 4 --vbits-high 4 --kbits-low 4 --vbits-low 4 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 4096 --target-mem-util 1.0
+python3 eval_codegen.py --dataset humaneval --model-gen 2 --model-size 7  --log-path ../logs/param_tune/llama2-7b --kbits-high 4 --vbits-high 2 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 1.0 --kv-buffer 4096 --target-mem-util 1.0

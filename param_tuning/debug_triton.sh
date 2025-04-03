@@ -1,0 +1,10 @@
+export PYTHONPATH=/home/zhangyanqi/Projects/eLLM:$PYTHONPATH
+# mmlu 84-42
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.8 --kv-buffer 32 --target-mem-util 0.1 --rounds 1
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.85 --kv-buffer 32 --target-mem-util 0.1 --rounds 1
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.9 --kv-buffer 32 --target-mem-util 0.1 --rounds 1
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.95 --kv-buffer 32 --target-mem-util 0.1 --rounds 1
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 8 --vbits-high 4 --kbits-low 4 --vbits-low 2 --kv-prune-thresh 1.0 --kv-quant-thresh 0.97 --kv-buffer 32 --target-mem-util 0.1 --rounds 5
+# mmlu 42-41
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 4 --vbits-high 2 --kbits-low 4 --vbits-low 1 --kv-prune-thresh 1.0 --kv-quant-thresh 0.9 --kv-buffer 32 --target-mem-util 0.1 --rounds 1
+python3 eval_qa_correct.py --dataset mmlu_cot --model-gen 3 --model-size 70  --log-path ../logs/param_tune_5rounds/llama3-70b --kbits-high 4 --vbits-high 2 --kbits-low 4 --vbits-low 1 --kv-prune-thresh 1.0 --kv-quant-thresh 0.95 --kv-buffer 32 --target-mem-util 0.1 --rounds 1

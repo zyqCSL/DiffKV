@@ -1,0 +1,7 @@
+# Should be mirrored in pyproject.toml
+ninja
+packaging
+setuptools>=69.5.1
+torch == 2.4.0  # H20 GPU
+# nvidia-cublas-cu12 == 12.5.3.2  # H20 GPU
+wheel
