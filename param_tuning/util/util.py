@@ -7,7 +7,10 @@ LLAMA3_WARNING = ('Special tokens have been added in the vocabulary, '
 LONG_SEQ_WARNING = 'Token indices sequence length is longer than the specified maximum sequence length for this model'
 ALLOWED_MSG = [LLAMA3_WARNING,
                LONG_SEQ_WARNING,
-               ' -- Started a local Ray instance.']
+               ' -- Started a local Ray instance.',
+               'Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources.',
+               'Using the latest cached version of the dataset',
+               ]
 
 # return True if error exists
 def check_vllm_stderr(log: str):
@@ -58,8 +61,6 @@ def compose_cmd(
     file_dir_path: str,
     # dataset default
     zero_shot: bool = False,
-    emulate: bool = False,
-    attn_prune_thresh: Optional[float] = None,
     sample_rate: Optional[int] = None,
 ) -> str:
     assert dataset in [
@@ -89,11 +90,7 @@ def compose_cmd(
         _gpu_id = gpu_id
         tp_size = 1
     
-    if emulate:
-        script_name = f'run_{dataset}_emulate.py'
-        assert attn_prune_thresh is not None
-    else:
-        script_name = f'run_{dataset}.py'
+    script_name = f'run_{dataset}.py'
     assert os.path.isfile(f'{file_dir_path}/{script_name}')
     
     cmd = (f'CUDA_VISIBLE_DEVICES={_gpu_id} RAY_DEDUP_LOGS=0 '
@@ -122,8 +119,6 @@ def compose_cmd(
            f'--indices-csv {indices_csv}')
     if label:
         cmd += f' --data-label {label}'
-    if emulate:
-        cmd += f' --attn-prune-thresh {attn_prune_thresh}'
     if zero_shot:
         cmd += ' --zero-shot'
     if sample_rate:
@@ -189,3 +184,11 @@ def compose_codegen_cmd(
             f'--temperature {temperature}')
     
     return cmd
+
+def maybe_destroy_process_group():
+    import torch
+    if torch.distributed.is_initialized():
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
+    # else:
+    #     print('Warning: No distributed process group to destroy.')

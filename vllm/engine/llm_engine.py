@@ -91,6 +91,15 @@ class LLMEngine:
             trust_remote_code=model_config.trust_remote_code,
             tokenizer_revision=model_config.tokenizer_revision,
             revision=model_config.revision)
+    
+        if len(self.tokenizer) != self.model_config.get_vocab_size():
+            logger.warning(
+                f"The tokenizer's vocabulary size {len(self.tokenizer)}"
+                f" does not match the model's vocabulary size "
+                f"{self.model_config.get_vocab_size()}. This might "
+                f"cause an error in decoding. Please change config.json "
+                "to match the tokenizer's vocabulary size.")
+        self.tokenizer_len = len(self.tokenizer)
         self.seq_counter = Counter()
 
         # GPU cluster orchestration
@@ -191,7 +200,6 @@ class LLMEngine:
         request_id: str,
         prompt: Optional[str],
         sampling_params: SamplingParams,
-        attn_prune_thresh: float,
         quant_configs: List[int],
         compress_configs: List[float],
         prompt_token_ids: Optional[List[int]] = None,
@@ -237,7 +245,7 @@ class LLMEngine:
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
                                   arrival_time,
-                                  attn_prune_thresh, quant_configs, compress_configs)
+                                  quant_configs, compress_configs)
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)
@@ -654,6 +662,7 @@ class LLMEngine:
         (new_tokens, new_output_text, prefix_offset,
          read_offset) = detokenize_incrementally(
              self.tokenizer,
+             self.tokenizer_len,
              all_input_ids=seq.get_token_ids(),
              prev_tokens=seq.tokens,
              prefix_offset=seq.prefix_offset,

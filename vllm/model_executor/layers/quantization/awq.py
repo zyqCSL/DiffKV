@@ -1,13 +1,16 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 from torch.nn.parameter import Parameter
 
 from vllm._C import ops
-from vllm.model_executor.layers.linear import (LinearMethodBase,
+from vllm.model_executor.layers.linear import (LinearBase,
+                                               LinearMethodBase,
+                                               UnquantizedLinearMethod,
                                                set_weight_attrs)
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
-
+from vllm.model_executor.layers.quantization.awq_triton import (awq_dequantize_triton,
+                                                                awq_gemm_triton)
 
 class AWQConfig(QuantizationConfig):
     """Config class for AWQ.
@@ -20,10 +23,12 @@ class AWQConfig(QuantizationConfig):
         weight_bits: int,
         group_size: int,
         zero_point: bool,
+        modules_to_not_convert: Optional[List[str]],
     ) -> None:
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.zero_point = zero_point
+        self.modules_to_not_convert = modules_to_not_convert or []
 
         if self.weight_bits != 4:
             raise ValueError(
@@ -42,7 +47,8 @@ class AWQConfig(QuantizationConfig):
     def get_supported_act_dtypes(self) -> List[torch.dtype]:
         return [torch.half]
 
-    def get_min_capability(self) -> int:
+    @staticmethod
+    def get_min_capability() -> int:
         # The AWQ kernel only supports Turing or newer GPUs.
         return 75
 
@@ -58,13 +64,27 @@ class AWQConfig(QuantizationConfig):
         weight_bits = cls.get_from_keys(config, ["w_bit", "bits"])
         group_size = cls.get_from_keys(config, ["q_group_size", "group_size"])
         zero_point = cls.get_from_keys(config, ["zero_point"])
-        return cls(weight_bits, group_size, zero_point)
+        modules_to_not_convert = cls.get_from_keys_or(
+            config, ["modules_to_not_convert"], None)
+        return cls(weight_bits, group_size, zero_point, modules_to_not_convert)
 
-    def get_linear_method(self) -> "AWQLinearMethod":
-        return AWQLinearMethod(self)
+    # def get_linear_method(self) -> "AWQLinearMethod":
+    #     return AWQLinearMethod(self)
+    
+    def get_quant_method(self, layer: torch.nn.Module,
+                         prefix: str) -> Union[Optional["AWQLinearMethod"], UnquantizedLinearMethod]:
+        if isinstance(layer, LinearBase):
+            if is_layer_skipped_awq(prefix, self.modules_to_not_convert):
+                return UnquantizedLinearMethod()
+            return AWQLinearMethod(self)
+        return None
 
     def get_scaled_act_names(self) -> List[str]:
         return ["gelu", "gelu_fast", "gelu_new", "gelu_pytorch_tanh"]
+
+
+def is_layer_skipped_awq(prefix: str, modules_to_not_convert: List[str]):
+    return any(module_name in prefix for module_name in modules_to_not_convert)
 
 
 class AWQLinearMethod(LinearMethodBase):
@@ -153,7 +173,20 @@ class AWQLinearMethod(LinearMethodBase):
         pack_factor = self.quant_config.pack_factor
         out_shape = (x.shape[:-1] + (qweight.shape[-1] * pack_factor, ))
         reshaped_x = x.reshape(-1, x.shape[-1])
+
+        # num_tokens >= threshold
+        FP16_MATMUL_HEURISTIC_CONDITION = x.shape[:-1].numel() >= 256
+
+        if FP16_MATMUL_HEURISTIC_CONDITION:
+            out = awq_dequantize_triton(qweight, scales, qzeros)
+            out = torch.matmul(reshaped_x, out)
+        else:
+            out = ops.awq_gemm(reshaped_x, qweight, scales, qzeros,
+                               pack_factor)
+
         out = ops.awq_gemm(reshaped_x, qweight, scales, qzeros, pack_factor)
+
+
         if bias is not None:
             out = out + bias
         return out.reshape(out_shape)

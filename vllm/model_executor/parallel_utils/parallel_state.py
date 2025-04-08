@@ -5,6 +5,7 @@
 """Tensor and pipeline parallel groups."""
 
 import torch
+import torch.distributed
 
 # Tensor model parallel group that the current rank belongs to.
 _TENSOR_MODEL_PARALLEL_GROUP = None
@@ -167,6 +168,18 @@ def get_pipeline_model_parallel_prev_rank():
     rank_in_pipeline = get_pipeline_model_parallel_rank()
     world_size = get_pipeline_model_parallel_world_size()
     return _PIPELINE_GLOBAL_RANKS[(rank_in_pipeline - 1) % world_size]
+
+
+def is_pipeline_model_parallel_first_rank():
+    assert _PIPELINE_GLOBAL_RANKS is not None, (
+        "Pipeline parallel group is not initialized")
+    return torch.distributed.get_rank() == _PIPELINE_GLOBAL_RANKS[0]
+
+
+def is_pipeline_model_parallel_last_rank():
+    assert _PIPELINE_GLOBAL_RANKS is not None, (
+        "Pipeline parallel group is not initialized")
+    return torch.distributed.get_rank() == _PIPELINE_GLOBAL_RANKS[-1]
 
 
 def destroy_model_parallel():

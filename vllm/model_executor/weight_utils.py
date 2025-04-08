@@ -88,7 +88,9 @@ def get_quant_config(
     hf_config: PretrainedConfig,
     cache_dir: Optional[str] = None,
 ) -> QuantizationConfig:
-    quant_cls = get_quantization_config(quantization)
+    architectures = getattr(hf_config, "architectures", [])
+    assert len(architectures) > 0
+    quant_cls = get_quantization_config(quantization, architectures[0])
     # Read the quantization config from the HF model config, if available.
     hf_quant_config = getattr(hf_config, "quantization_config", None)
     if hf_quant_config is not None:

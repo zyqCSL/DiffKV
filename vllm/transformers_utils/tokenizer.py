@@ -104,6 +104,7 @@ def _convert_tokens_to_string_with_added_encoders(
 # under Apache 2.0 license
 def detokenize_incrementally(
     tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+    tokenizer_len: int,
     all_input_ids: List[int],
     prev_tokens: Optional[List[str]],
     prefix_offset: int = 0,
@@ -127,9 +128,15 @@ def detokenize_incrementally(
         else:
             read_offset = max(len(output_tokens) - 1, 0)
     else:
-        # Put new_token_id in a list so skip_special_tokens is respected
-        new_tokens = tokenizer.convert_ids_to_tokens(
-            [new_token_id], skip_special_tokens=skip_special_tokens)
+        # NOTE: check https://github.com/vllm-project/vllm/pull/3685
+        # and https://github.com/vllm-project/vllm/issues/3118
+        # If the new token id is out of bounds, return an empty string.
+        if new_token_id >= tokenizer_len:
+            new_tokens = [""]
+        else:
+            # Put new_token_id in a list so skip_special_tokens is respected
+            new_tokens = tokenizer.convert_ids_to_tokens(
+                [new_token_id], skip_special_tokens=skip_special_tokens)
         output_tokens = prev_tokens + new_tokens
 
     # The prefix text is necessary only to defeat cleanup algorithms in

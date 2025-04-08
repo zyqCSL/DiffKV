@@ -14,8 +14,7 @@ model = LLM('meta-llama/Llama-2-7b-chat-hf',
 sampling_params = SamplingParams(temperature=0.0, max_tokens=5)  # greedy sampling
 
 quant_config = [8, 4, 4, 2]
-compress_config = [0.5, 0.8]
-attn_prune_thresh = 0
+compress_config = [0.0, 1.0]
 
 prompts = [
     "Senjō no Valkyria 3 : Unrecorded Chronicles ( Japanese : 戦場のヴァルキュリア3 , lit . Valkyria of the Battlefield 3 ) , " \
@@ -32,4 +31,4 @@ prompts += [
     # "Which American-born Sinclair won the Nobel Prize for Literature in 1930?",
 ]
 
-outputs = model.generate(prompts, sampling_params, attn_prune_thresh, quant_config, compress_config)
+outputs = model.generate(prompts, sampling_params, quant_config, compress_config)

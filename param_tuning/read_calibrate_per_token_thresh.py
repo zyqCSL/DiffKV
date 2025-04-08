@@ -2,6 +2,8 @@ import os
 import pandas as pd
 import numpy as np
 
+LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '/home/zhangyanqi/git_repos/DiffKV/logs')
+
 model_name = 'qwen25-32b'
 # model_name = 'qwen25-7b'
 # model_name = 'llama3-8b'
@@ -39,12 +41,11 @@ quant_configs = {
     ],
 }
 
-target_ratio = 10   # percent
 buffer = 64
 rounds = 5
 
 summary_dir = (
-    f'/home/zhangyanqi/Projects/eLLM/logs/per_token_thresh_calibrate_summary'
+    f'{LOG_DIR}/per_token_thresh_calibrate_summary'
     f'/kv_buffer_{buffer}/{model_name}')
 
 os.makedirs(summary_dir, exist_ok=True)
@@ -52,12 +53,12 @@ os.makedirs(summary_dir, exist_ok=True)
 for workload in workloads:
     print(workload)
     
-    dir = (f'/home/zhangyanqi/Projects/eLLM/logs/calibrate_per_token_thresh'
+    dir = (f'{LOG_DIR}/calibrate_per_token_thresh'
            f'/{model_name}/{workload}/')
     metric = metrics[workload]
     
     for high_k, high_v, low_k, low_v in quant_configs[workload]:
-        sub_dir = f'{dir}/k{high_k}v{high_v}_k{low_k}v{low_v}/target_{target_ratio}_buffer_{buffer}/'
+        sub_dir = f'{dir}/k{high_k}v{high_v}_k{low_k}v{low_v}/buffer_{buffer}/'
         all_prune_threshes = []
         prune_thresh_to_quant_thresh = {}   # indexed by prune_thresh
         

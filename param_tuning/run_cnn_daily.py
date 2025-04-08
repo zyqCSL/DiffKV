@@ -15,6 +15,8 @@ from vllm.dataset import (
     # XSumDataset,
 )
 
+from util import maybe_destroy_process_group
+
 # NOTE: Maximum recursion depth exceeded in comparison
 # https://github.com/pltrdy/rouge/issues/19
 MAX_GEN_LEN = 1000
@@ -29,7 +31,7 @@ def add_summary_requests(
     engine: LLMEngine,
     dataset: SummaryDataset,
     questions: List[SummaryQuestion],
-    quant_configs: List[Tuple[int]],
+    quant_configs: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -37,9 +39,11 @@ def add_summary_requests(
         # print(question)
         prompt, sampling_params = question.make_request()
         engine.add_request(
-            request_id=str(REQUEST_ID), prompt=prompt, 
-            attn_prune_thresh=0.0, sampling_params=sampling_params,
-            quant_configs=quant_configs, compress_configs=compress_configs,
+            request_id=str(REQUEST_ID), 
+            prompt=prompt, 
+            sampling_params=sampling_params,
+            quant_configs=quant_configs, 
+            compress_configs=compress_configs,
         )
         dataset.register_request(question, str(REQUEST_ID))
         REQUEST_ID += 1
@@ -74,8 +78,6 @@ def run_cnn_daily_mail_dataset(
     vbits_low: int,
     kv_prune_thresh: float,
     kv_quant_thresh: float,
-    kv_prune_ratio: float,
-    kv_quant_ratio: float,
     label: str,
     quiet: bool = True,
 ) -> None:
@@ -168,9 +170,9 @@ def main(args: argparse.Namespace):
         vbits_low=args.vbits_low,
         kv_prune_thresh=args.kv_prune_thresh,
         kv_quant_thresh=args.kv_quant_thresh,
-        kv_prune_ratio=args.kv_prune_ratio,
-        kv_quant_ratio=args.kv_quant_ratio,
         label=args.data_label)
+    
+    maybe_destroy_process_group()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -188,7 +190,5 @@ if __name__ == "__main__":
     parser.add_argument('--vbits-low', type=int, required=True)
     parser.add_argument('--kv-prune-thresh', type=float, required=True)
     parser.add_argument('--kv-quant-thresh', type=float, required=True)
-    parser.add_argument('--kv-prune-ratio', type=float, required=True)
-    parser.add_argument('--kv-quant-ratio', type=float, required=True)
     args = parser.parse_args()
     main(args)

@@ -32,6 +32,7 @@ from vllm.model_executor.layers.activation import SiluAndMul
 from vllm.model_executor.layers.sparse_attention_big_kernel import SparsePagedAttention
 # from vllm.model_executor.layers.sparse_attention_small_kernel import SparsePagedAttention
 from vllm.model_executor.layers.layernorm import RMSNorm
+from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.linear import (LinearMethodBase,
                                                MergedColumnParallelLinear,
                                                QKVParallelLinear,
@@ -58,17 +59,23 @@ class LlamaMLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size, [intermediate_size] * 2,
             bias=False,
-            linear_method=linear_method)
-        self.down_proj = RowParallelLinear(intermediate_size,
-                                           hidden_size,
-                                           bias=False,
-                                           linear_method=linear_method)
+            quant_config=quant_config,
+            prefix=f"{prefix}.gate_up_proj",
+        )
+        self.down_proj = RowParallelLinear(
+            intermediate_size,
+            hidden_size,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.down_proj",
+        )
         if hidden_act != "silu":
             raise ValueError(f"Unsupported activation: {hidden_act}. "
                              "Only silu is supported for now.")
@@ -94,7 +101,8 @@ class LlamaAttention(nn.Module):
         max_kv_slots: Optional[int] = None,
         rope_scaling: Optional[Dict[str, Any]] = None,
         max_position_embeddings: int = 8192,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.layer = layer
@@ -129,13 +137,15 @@ class LlamaAttention(nn.Module):
             self.total_num_heads,
             self.total_num_kv_heads,
             bias=False,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.qkv_proj",
         )
         self.o_proj = RowParallelLinear(
             self.total_num_heads * self.head_dim,
             hidden_size,
             bias=False,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.o_proj",
         )
 
         self.rotary_emb = get_rope(
@@ -186,7 +196,8 @@ class LlamaDecoderLayer(nn.Module):
         config: LlamaConfig,
         kv_buffer_size: int,
         max_kv_slots: Optional[int] = None,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.layer = layer
@@ -205,13 +216,15 @@ class LlamaDecoderLayer(nn.Module):
             max_kv_slots=max_kv_slots,
             rope_scaling=rope_scaling,
             max_position_embeddings=max_position_embeddings,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.self_attn",
         )
         self.mlp = LlamaMLP(
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.mlp"
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -252,9 +265,10 @@ class LlamaModel(nn.Module):
     def __init__(
         self,
         config: LlamaConfig,
-        kv_buffer_size: Union[int, List[int]],
+        kv_buffer_size: int,
         max_kv_slots: Optional[int] = None,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.config = config
@@ -264,27 +278,16 @@ class LlamaModel(nn.Module):
             config.vocab_size,
             config.hidden_size,
         )
-        if type(kv_buffer_size) is list:
-            self.layers = nn.ModuleList([
-                LlamaDecoderLayer(
-                    layer,
-                    config,
-                    kv_buffer_size[layer],
-                    max_kv_slots,
-                    linear_method)
-                for layer in range(config.num_hidden_layers)
-            ])
-        else:
-            assert type(kv_buffer_size) is int
-            self.layers = nn.ModuleList([
-                LlamaDecoderLayer(
-                    layer,
-                    config,
-                    kv_buffer_size,
-                    max_kv_slots,
-                    linear_method)
-                for layer in range(config.num_hidden_layers)
-            ])
+        self.layers = nn.ModuleList([
+            LlamaDecoderLayer(
+                layer,
+                config,
+                kv_buffer_size,
+                max_kv_slots,
+                quant_config,
+                f"{prefix}.layers.{layer}")
+            for layer in range(config.num_hidden_layers)
+        ])
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
@@ -317,18 +320,18 @@ class LlamaForCausalLM(nn.Module):
     def __init__(
         self,
         config: LlamaConfig,
-        kv_buffer_size: Union[int, List[int]],
+        kv_buffer_size: int,
         max_kv_slots: Optional[int] = None,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
     ) -> None:
         super().__init__()
         self.config = config
-        self.linear_method = linear_method
         self.model = LlamaModel(
             config,
             kv_buffer_size,
             max_kv_slots,
-            linear_method)
+            quant_config,
+            prefix="model")
         self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size)
         self.sampler = Sampler(config.vocab_size)
 

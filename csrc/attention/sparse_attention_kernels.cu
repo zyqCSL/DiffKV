@@ -135,24 +135,18 @@ __device__ void sparse_paged_attention_kernel(
   const float scale,
   const int* __restrict__ block_tables,    // [num_slots, num_layers, num_kv_heads, max_num_blocks_per_seq]
   const int* __restrict__ kv_len_tables,   // [num_slots, num_layers, num_kv_heads, 2]
-  uint64_t* __restrict__ sparsity_tables,       // [num_slots, num_layers, num_kv_heads]
   const int max_context_len,
   const int max_num_blocks_per_seq,
   const float* __restrict__ alibi_slopes,  // [num_heads]
   const int q_stride,
-  const int unified_page_size,
-  const float prune_thresh)
+  const int unified_page_size)
 {
-  // prune_thresh == 0 disables sparsity
-  assert(prune_thresh >= 0);
-  // assert(prune_thresh <= 1);
   const int partition_idx = blockIdx.z;
   const int seq_idx = blockIdx.y;
   const int slot_idx = slot_ids[seq_idx];
   const int max_num_partitions = gridDim.z;
   const int max_context_len_power2 = POWER2_ROUND_UP(max_context_len);
   const int position = positions[seq_idx];
-  const float non_critical_thresh = 1.0 / position * prune_thresh;
 
   constexpr int NUM_WARPS = NUM_THREADS / WARP_SIZE;
   const int thread_idx = threadIdx.x;
@@ -462,25 +456,12 @@ __device__ void sparse_paged_attention_kernel(
   }
   exp_sum = block_sum<NUM_WARPS>(&red_smem[NUM_WARPS], exp_sum);
 
-  // sparsity log
-  int num_critical_keys = 0;
   // Compute softmax.
   const float inv_sum = __fdividef(1.f, exp_sum + 1e-6f);
   for (int i = thread_idx; i < num_tokens; i += NUM_THREADS) {
     logits[i] *= inv_sum;
-    if (logits[i] >= non_critical_thresh) {
-      num_critical_keys += 1;
-    }
   }
   __syncthreads();
-
-  num_critical_keys = block_sum<NUM_WARPS>(&red_smem[NUM_WARPS], num_critical_keys);
-  if (thread_idx == 0) {
-    const int sparsity_tables_offset = slot_idx * num_layers * num_heads +
-                                       layer_idx * num_heads + head_idx;
-    // We need atomicAdd because multiple cuda blocks may update the same location due to sequence partitioning.
-    atomicAdd((unsigned long long*)&sparsity_tables[sparsity_tables_offset], num_critical_keys);
-  }
 
   // Print the first 10 logits for debugging purpose.
   if (DEBUG && layer_idx == 0 && seq_idx == 0 && kv_head_idx == 0 && thread_idx == 0) {
@@ -606,9 +587,7 @@ __device__ void sparse_paged_attention_kernel(
           if (token_idx_within_the_page < NUM_TOKENS_PER_PAGE_HIGH && token_idx < context_len_left) {
             #pragma unroll
             for (int k = 0; k < V_PACK_SIZE_HIGH; k++) {
-              if (logits[token_idx - start_token_idx] >= non_critical_thresh) {
-                accs[p_idx * V_PACK_SIZE_HIGH + k] += logits[token_idx - start_token_idx] * v_floats[k];
-              }
+              accs[p_idx * V_PACK_SIZE_HIGH + k] += logits[token_idx - start_token_idx] * v_floats[k];
             }
           }
         }
@@ -662,9 +641,7 @@ __device__ void sparse_paged_attention_kernel(
           if (token_idx_within_the_page < NUM_TOKENS_PER_PAGE_LOW && token_idx < context_len_right) {
             #pragma unroll
             for (int k = 0; k < V_PACK_SIZE_LOW; k++) {
-              if (logits[token_idx + context_len_left - start_token_idx] >= prune_thresh) {
-                accs[p_idx * V_PACK_SIZE_LOW + k] += logits[token_idx + context_len_left - start_token_idx] * v_floats[k];
-              }
+              accs[p_idx * V_PACK_SIZE_LOW + k] += logits[token_idx + context_len_left - start_token_idx] * v_floats[k];
             }
           }
         }
@@ -1006,20 +983,18 @@ __global__ void sparse_paged_attention_wrapper(
   const float scale,
   const int* __restrict__ block_tables,     // [num_slots, num_layers, num_kv_heads, max_num_blocks_per_seq]
   const int* __restrict__ kv_len_tables,    // [num_slots, num_layers, num_kv_heads, 2]
-  uint64_t* __restrict__ sparsity_tables,      // [num_slots, num_layers, num_heads]
   const int max_context_len,
   const int max_num_blocks_per_seq,
   const float* __restrict__ alibi_slopes,   // [num_heads]
   const int q_stride,
-  const int unified_page_size,
-  const float prune_thresh) {
+  const int unified_page_size) {
   sparse_paged_attention_kernel<scalar_t, HEAD_SIZE, NUM_QUERIES_PER_KV, BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,
                                 NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW, THREAD_GROUP_SIZE_V, PARTITION_SIZE>(
     slot_ids, positions, exp_sums, max_logits, tmp_out, tmp_scores,
     q, kv_cache, layer_idx, num_layers, num_kv_heads, scale,
-    block_tables, kv_len_tables, sparsity_tables,
+    block_tables, kv_len_tables,
     max_context_len, max_num_blocks_per_seq, alibi_slopes, q_stride,
-    unified_page_size, prune_thresh);
+    unified_page_size);
 }
 
 } // namespace vllm
@@ -1048,13 +1023,11 @@ __global__ void sparse_paged_attention_wrapper(
      scale,                                                                                    \
      block_tables_ptr,                                                                         \
      kv_len_tables_ptr,                                                                        \
-     sparsity_tables_ptr,                                                                      \
      max_context_len,                                                                          \
      max_num_blocks_per_seq,                                                                   \
      alibi_slopes_ptr,                                                                         \
      q_stride,                                                                                 \
-     unified_page_size,                                                                        \
-     prune_thresh);                                                                            \
+     unified_page_size);                                                                       \
   vllm::reduce_kernel<T, HEAD_SIZE, NUM_QUERIES_PER_KV, BITS_K_HIGH, BITS_V_HIGH,              \
                       BITS_K_LOW, BITS_V_LOW, NUM_TOKENS_PER_PAGE_HIGH,                        \
                       NUM_TOKENS_PER_PAGE_LOW, PARTITION_SIZE>                                 \
@@ -1101,9 +1074,7 @@ void sparse_paged_attention_launcher(
   float scale,
   torch::Tensor& block_tables,
   torch::Tensor& kv_len_tables,
-  torch::Tensor& sparsity_tables,
   int max_context_len,
-  float prune_thresh,
   const c10::optional<torch::Tensor>& alibi_slopes)
 {
   // printf("[Debug info from sparse_attention_kernels.cu] max_context_len: %d\n", max_context_len);
@@ -1138,7 +1109,6 @@ void sparse_paged_attention_launcher(
   uint16_t* kv_cache_ptr = reinterpret_cast<uint16_t*>(kv_cache.data_ptr());
   const int* block_tables_ptr = block_tables.data_ptr<int>();
   const int* kv_len_tables_ptr = kv_len_tables.data_ptr<int>();
-  uint64_t* sparsity_tables_ptr = sparsity_tables.data_ptr<uint64_t>();
 
   assert(WARP_SIZE % THREAD_GROUP_SIZE_V == 0);
   constexpr int NUM_THREAD_GROUPS_V = WARP_SIZE / THREAD_GROUP_SIZE_V;
@@ -1261,9 +1231,7 @@ void sparse_paged_attention_launcher(
     scale,                                                      \
     block_tables,                                               \
     kv_len_tables,                                              \
-    sparsity_tables,                                            \
     max_context_len,                                            \
-    prune_thresh,                                               \
     alibi_slopes);
 
 #define CALL_LAUNCHER_QUANT_CONFIG(T)                          \
@@ -1336,9 +1304,7 @@ void sparse_paged_attention(
   float scale,
   torch::Tensor& block_tables,    // [num_slots, num_layers, num_kv_heads, max_num_blocks_per_seq]
   torch::Tensor& kv_len_tables,   // [num_slots, num_layers, num_kv_heads, 2]
-  torch::Tensor& sparsity_tables, // [num_slots, num_layers, num_kv_heads]
   int max_context_len,
-  float prune_thresh,
   int num_bits_k_high,
   int num_bits_v_high,
   int num_bits_k_low,

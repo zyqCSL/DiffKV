@@ -2,6 +2,8 @@
 #include "mem_mgt.h"
 #include "cuda_utils.h"
 #include "ops.h"
+#include "./moe/moe_ops.h"
+// #include "./moe/moe_permute_unpermute.h"
 #include <torch/extension.h>
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -62,6 +64,37 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   ops.def("gptq_gemm", &gptq_gemm, "Quantized GEMM for GPTQ");
   ops.def("gptq_shuffle", &gptq_shuffle, "Post processing for GPTQ");
   ops.def("squeezellm_gemm", &squeezellm_gemm, "Quantized GEMM for SqueezeLLM");
+  ops.def(
+    "static_scaled_fp8_quant",
+    &static_scaled_fp8_quant,
+    "Compute FP8 quantized tensor for given scaling factor");
+  ops.def(
+    "dynamic_scaled_fp8_quant",
+    &dynamic_scaled_fp8_quant,
+    "Compute dynamic-per-tensor FP8 quantized tensor and scaling factor");
+  ops.def(
+    "dynamic_per_token_scaled_fp8_quant",
+    &dynamic_per_token_scaled_fp8_quant,
+    "Compute dynamic-per-token FP8 quantized tensor and scaling factor");
+
+  // MoE ops
+  ops.def("topk_softmax", &topk_softmax, "Apply top-k softmax to the gating outputs.");
+  ops.def("moe_sum", &moe_sum, "Calculate the result of MoE by summing up the partial results from all selected experts.");
+  ops.def(
+    "moe_align_block_size",
+    &moe_align_block_size,
+    "Align the number of tokens to be processed by each expert such that it is divisible by the block size.");
+  ops.def(
+    "sgl_moe_align_block_size",
+    &sgl_moe_align_block_size,
+    "Align the number of tokens to be processed by each expert such that it is divisible by the block size for SGL MoE.");
+#ifndef USE_ROCM
+  ops.def(
+    "moe_wna16_gemm",
+    &moe_wna16_gemm,
+    "MoE WNA16 GEMM for quantized MoE with WNA16 format.");
+#endif
+
 
   // Cache ops
   pybind11::module cache_ops = m.def_submodule("cache_ops", "vLLM cache ops");

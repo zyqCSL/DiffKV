@@ -39,21 +39,19 @@ class GPTQConfig(QuantizationConfig):
                 f"group_size={self.group_size}, "
                 f"desc_act={self.desc_act})")
 
-    @classmethod
-    def get_name(cls) -> str:
+    def get_name(self) -> str:
         return "gptq"
 
-    @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(self) -> List[torch.dtype]:
         return [torch.half]
 
-    @classmethod
+    @staticmethod
     # Need to figure it out
-    def get_min_capability(cls) -> int:
+    def get_min_capability() -> int:
         return 60
 
-    @classmethod
-    def get_config_filenames(cls) -> List[str]:
+    @staticmethod
+    def get_config_filenames() -> List[str]:
         return ["quantize_config.json"]
 
     @classmethod
@@ -63,7 +61,11 @@ class GPTQConfig(QuantizationConfig):
         desc_act = cls.get_from_keys(config, ["desc_act"])
         return cls(weight_bits, group_size, desc_act)
 
-    def get_linear_method(self) -> "GPTQLinearMethod":
+    # def get_linear_method(self) -> "GPTQLinearMethod":
+    #     return GPTQLinearMethod(self)
+    
+    def get_quant_method(self, layer: torch.nn.Module,
+                         prefix: str) -> "GPTQLinearMethod":
         return GPTQLinearMethod(self)
 
     def get_scaled_act_names(self) -> List[str]:

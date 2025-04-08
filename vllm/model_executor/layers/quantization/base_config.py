@@ -1,9 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import torch
-
-from vllm.model_executor.layers.linear import LinearMethodBase
 
 
 class QuantizationConfig(ABC):
@@ -19,8 +17,9 @@ class QuantizationConfig(ABC):
         """List of supported activation dtypes."""
         raise NotImplementedError
 
+    @staticmethod
     @abstractmethod
-    def get_min_capability(self) -> int:
+    def get_min_capability() -> int:
         """Minimum GPU capability to support the quantization method.
 
         E.g., 70 for Volta, 75 for Turing, 80 for Ampere.
@@ -50,9 +49,27 @@ class QuantizationConfig(ABC):
         raise ValueError(f"Cannot find any of {keys} in the model's "
                          "quantization config.")
 
+    @staticmethod
+    def get_from_keys_or(config: Dict[str, Any], keys: List[str],
+                         default: Any) -> Any:
+        """Get a optional value from the model's quantization config."""
+        try:
+            return QuantizationConfig.get_from_keys(config, keys)
+        except ValueError:
+            return default
+        
     @abstractmethod
-    def get_linear_method(self) -> LinearMethodBase:
-        """Get the linear method to use for the quantized linear layer."""
+    def get_quant_method(self, layer: torch.nn.Module,
+                         prefix: str) -> Any:
+        """Get the quantize method to use for the quantized layer.
+        
+        Args:
+            layer: The layer for the quant method.
+            prefix: The full name of the layer in the state dict
+        Returns:
+            The quantize method. None if the given layer doesn't support quant
+            method.
+        """
         raise NotImplementedError
 
     @abstractmethod

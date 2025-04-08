@@ -240,7 +240,6 @@ class SequenceGroup:
         seqs: List[Sequence],
         sampling_params: SamplingParams,
         arrival_time: float,
-        attn_prune_thresh: float,
         quant_configs: List[int],
         compress_configs: List[float],
     ) -> None:
@@ -252,10 +251,6 @@ class SequenceGroup:
         
         # used in scheduler to decide how much memory is allocated to the group
         self.is_decode = False
-        
-        # attn compute sparsity configs
-        assert attn_prune_thresh >= 0, attn_prune_thresh
-        self.attn_prune_thresh = attn_prune_thresh
         
         # kv pruning configs
         # assert len(compress_configs) == 4
@@ -400,7 +395,6 @@ class SequenceGroupMetadata:
         is_prompt: bool,
         seq_data: Dict[int, SequenceData],
         sampling_params: SamplingParams,
-        attn_prune_thresh: Optional[float],
         num_bits_k_high: Optional[int],
         num_bits_v_high: Optional[int],
         num_bits_k_low: Optional[int],
@@ -415,7 +409,6 @@ class SequenceGroupMetadata:
         self.sampling_params = sampling_params
         self.slot_ids: List[int] = []
         # quant config
-        self.attn_prune_thresh = attn_prune_thresh
         self.num_bits_k_high = num_bits_k_high
         self.num_bits_v_high = num_bits_v_high
         self.num_bits_k_low = num_bits_k_low

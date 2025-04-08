@@ -77,7 +77,8 @@ class MMLUProCoTDataset(LLMDataset):
     def __init__(
         self, 
         max_tokens: int = 1024,
-        sample_percent: int = 100):
+        sample_percent: int = 100
+    ):
         super().__init__(LLMDatasetType.COT_QA)
         self.dataset = load_dataset('TIGER-Lab/MMLU-Pro')
         self.sample_percent = sample_percent

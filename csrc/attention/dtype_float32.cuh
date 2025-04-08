@@ -55,7 +55,15 @@ struct Vec<float, 2> {
 };
 template<>
 struct Vec<float, 4> {
-  using Type = float4;
+  using Type = Float4_;
+};
+template<>
+struct Vec<float, 8> {
+  using Type = Float8_;
+};
+template<>
+struct Vec<float, 16> {
+  using Type = Float16_;
 };
 
 // FP32 accumulator vector types corresponding to Vec.
@@ -291,6 +299,18 @@ inline __device__ void from_float(float2& dst, float2 src) {
 }
 
 inline __device__ void from_float(float4& dst, float4 src) {
+  dst = src;
+}
+
+inline __device__ void from_float(Float4_& dst, Float4_ src) {
+  dst = src;
+}
+
+inline __device__ void from_float(Float8_& dst, Float8_ src) {
+  dst = src;
+}
+
+inline __device__ void from_float(Float16_& dst, Float16_ src) {
   dst = src;
 }
 

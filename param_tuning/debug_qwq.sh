@@ -1,4 +1,4 @@
-export PYTHONPATH=/home/zhangyanqi/Projects/eLLM:$PYTHONPATH
+export PYTHONPATH=/home/zhangyanqi/git_repos/DiffKV:$PYTHONPATH
 # # gsm8k 88-88
 CUDA_VISIBLE_DEVICES=2,3 RAY_DEDUP_LOGS=0 \
     python3 /home/zhangyanqi/Projects/eLLM/param_tuning/run_minerva_math.py \

@@ -1,5 +1,5 @@
 import importlib
-from typing import List, Optional, Type
+from typing import List, Optional, Type, Tuple
 
 import torch.nn as nn
 
@@ -37,6 +37,8 @@ _MODELS = {
     "MistralForCausalLM": ("sparse_mistral", "MistralForCausalLM"),
     "MixtralForCausalLM": ("sparse_mixtral", "MixtralForCausalLM"),
     "Qwen2ForCausalLM": ("sparse_qwen2", "Qwen2ForCausalLM"),
+    "Qwen3ForCausalLM": ("sparse_qwen3", "Qwen3ForCausalLM"),
+    "Qwen3MoeForCausalLM": ("sparse_qwen3_moe", "Qwen3MoeForCausalLM"),
     # transformers's mpt class has lower case
     "MptForCausalLM": ("mpt", "MPTForCausalLM"),
     "MPTForCausalLM": ("mpt", "MPTForCausalLM"),

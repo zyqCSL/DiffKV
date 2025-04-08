@@ -131,7 +131,6 @@ class SparsePagedAttention(nn.Module):
         slot_ids = input_metadata.slot_ids
         block_tables = input_metadata.block_tables
         kv_len_tables = input_metadata.kv_len_tables
-        sparsity_tables = input_metadata.sparsity_tables
         compress_config_tables = input_metadata.compress_config_tables
 
         if input_metadata.is_prompt:
@@ -388,9 +387,6 @@ class SparsePagedAttention(nn.Module):
             tmp_scores = torch.empty((batch_size, self.num_heads, max_context_len),
                                       dtype=torch.float32, device=query.device)
 
-            # assert input_metadata.attn_prune_thresh >= 0 and input_metadata.attn_prune_thresh <= 1, input_metadata.attn_prune_thresh
-            assert input_metadata.attn_prune_thresh >= 0, input_metadata.attn_prune_thresh
-
             if max_context_len <= _PARTITION_SIZE:
                 num_partitions = 1
             else:
@@ -423,9 +419,7 @@ class SparsePagedAttention(nn.Module):
                 self.scale,
                 block_tables,
                 kv_len_tables,
-                sparsity_tables,
                 max_context_len,
-                input_metadata.attn_prune_thresh,
                 input_metadata.num_bits_k_high,
                 input_metadata.num_bits_v_high,
                 input_metadata.num_bits_k_low,

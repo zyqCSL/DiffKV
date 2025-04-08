@@ -27,9 +27,6 @@ class InputMetadata:
         block_size: Optional[int],
         block_tables: Optional[torch.Tensor],
         kv_len_tables: Optional[torch.Tensor],
-        sparsity_tables: Optional[torch.Tensor],
-        # attention sparsity config
-        attn_prune_thresh: float,
         # kv cache quant configs
         num_bits_k_high: int,
         num_bits_v_high: int,
@@ -52,10 +49,6 @@ class InputMetadata:
         self.block_size = block_size
         self.block_tables = block_tables
         self.kv_len_tables = kv_len_tables
-        self.sparsity_tables = sparsity_tables
-        
-        # sparse attention compute
-        self.attn_prune_thresh = attn_prune_thresh
         
         # kv cache quant & pruning configs
         self.num_bits_k_high = num_bits_k_high

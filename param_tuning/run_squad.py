@@ -18,6 +18,8 @@ from vllm.dataset import (
     SquadDatasetV2,
 )
 
+from util import maybe_destroy_process_group
+
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -35,7 +37,7 @@ def add_squad_requests(
     engine: LLMEngine,
     dataset: SquadDataset,
     questions: List[SquadQuestion],
-    quant_configs: List[Tuple[int]],
+    quant_configs: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -46,7 +48,6 @@ def add_squad_requests(
             request_id=str(REQUEST_ID), 
             prompt=prompt, 
             sampling_params=sampling_params,
-            attn_prune_thresh=0.0,
             quant_configs=quant_configs, 
             compress_configs=compress_configs,
         )
@@ -83,8 +84,6 @@ def run_squad_dataset(
     vbits_low: int,
     kv_prune_thresh: float,
     kv_quant_thresh: float,
-    kv_prune_ratio: float,
-    kv_quant_ratio: float,
     label: str = 'train',
     quiet: bool = True,
 ) -> None:
@@ -182,10 +181,10 @@ def main(args: argparse.Namespace):
         vbits_low=args.vbits_low,
         kv_prune_thresh=args.kv_prune_thresh,
         kv_quant_thresh=args.kv_quant_thresh,
-        kv_prune_ratio=args.kv_prune_ratio,
-        kv_quant_ratio=args.kv_quant_ratio,
         label=args.data_label)
     print(f'--- time elapsed = {time.time() - t0}s ---')
+
+    maybe_destroy_process_group()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -203,8 +202,6 @@ if __name__ == "__main__":
     parser.add_argument('--vbits-low', type=int, required=True)
     parser.add_argument('--kv-prune-thresh', type=float, required=True)
     parser.add_argument('--kv-quant-thresh', type=float, required=True)
-    parser.add_argument('--kv-prune-ratio', type=float, required=True)
-    parser.add_argument('--kv-quant-ratio', type=float, required=True)
     
     parser.add_argument('--use-v1', action='store_true')
     args = parser.parse_args()

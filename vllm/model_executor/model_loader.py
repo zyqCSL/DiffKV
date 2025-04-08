@@ -1,6 +1,6 @@
 """Utilities for selecting and loading models."""
 import contextlib
-from typing import Type, Optional, Union, Dict, List
+from typing import Type, Optional, Union, Dict, List, Tuple
 
 import torch
 import torch.nn as nn
@@ -36,11 +36,11 @@ def get_model(
     model_config: ModelConfig,
     kv_buffer_size: Union[int, List[int]],
     max_kv_slots: Optional[int] = None,
-    ) -> nn.Module:
+) -> nn.Module:
     model_class = _get_model_architecture(model_config.hf_config)
 
-    # Get the (maybe quantized) linear method.
-    linear_method = None
+    # Get the (maybe quantized) config.
+    quant_config = None
     if model_config.quantization is not None:
         quant_config = get_quant_config(model_config.quantization,
                                         model_config.model,
@@ -60,7 +60,6 @@ def get_model(
                 f"{model_config.dtype} is not supported for quantization "
                 f"method {model_config.quantization}. Supported dtypes: "
                 f"{supported_dtypes}")
-        linear_method = quant_config.get_linear_method()
 
     with _set_default_torch_dtype(model_config.dtype):
         # Create a model instance.
@@ -70,7 +69,7 @@ def get_model(
                 config=model_config.hf_config, 
                 kv_buffer_size=kv_buffer_size,
                 max_kv_slots=max_kv_slots,
-                linear_method=linear_method)
+                quant_config=quant_config)
         if model_config.load_format == "dummy":
             # NOTE(woosuk): For accurate performance evaluation, we assign
             # random values to the weights.

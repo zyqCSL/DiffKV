@@ -1,102 +1,224 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vllm-project/vllm/main/docs/source/assets/logos/vllm-logo-text-dark.png">
-    <img alt="vLLM" src="https://raw.githubusercontent.com/vllm-project/vllm/main/docs/source/assets/logos/vllm-logo-text-light.png" width=55%>
-  </picture>
-</p>
-
 <h3 align="center">
-Easy, fast, and cheap LLM serving for everyone
+DiffKV: Differentiated KV Cache Management for LLM Inference
 </h3>
 
-<p align="center">
-| <a href="https://docs.vllm.ai"><b>Documentation</b></a> | <a href="https://vllm.ai"><b>Blog</b></a> | <a href="https://arxiv.org/abs/2309.06180"><b>Paper</b></a> | <a href="https://discord.gg/jz7wjKhh6g"><b>Discord</b></a> |
-
-</p>
-
 ---
 
-*Latest News* 🔥
-- [2023/12] Added ROCm support to vLLM.
-- [2023/10] We hosted [the first vLLM meetup](https://lu.ma/first-vllm-meetup) in SF! Please find the meetup slides [here](https://docs.google.com/presentation/d/1QL-XPFXiFpDBh86DbEegFXBXFXjix4v032GhShbKf3s/edit?usp=sharing).
-- [2023/09] We created our [Discord server](https://discord.gg/jz7wjKhh6g)! Join us to discuss vLLM and LLM serving! We will also post the latest announcements and updates there.
-- [2023/09] We released our [PagedAttention paper](https://arxiv.org/abs/2309.06180) on arXiv!
-- [2023/08] We would like to express our sincere gratitude to [Andreessen Horowitz](https://a16z.com/2023/08/30/supporting-the-open-source-ai-community/) (a16z) for providing a generous grant to support the open-source development and research of vLLM.
-- [2023/07] Added support for LLaMA-2! You can run and serve 7B/13B/70B LLaMA-2s on vLLM with a single command!
-- [2023/06] Serving vLLM On any Cloud with SkyPilot. Check out a 1-click [example](https://github.com/skypilot-org/skypilot/blob/master/llm/vllm) to start the vLLM demo, and the [blog post](https://blog.skypilot.co/serving-llm-24x-faster-on-the-cloud-with-vllm-and-skypilot/) for the story behind vLLM development on the clouds.
-- [2023/06] We officially released vLLM! FastChat-vLLM integration has powered [LMSYS Vicuna and Chatbot Arena](https://chat.lmsys.org) since mid-April. Check out our [blog post](https://vllm.ai).
+_**DiffKV**_ is an LLM inference framework that enables efficent KV cache compression by jointly exploiting three levels of differentiation in the KV cache: 
 
----
+- The differing impact of keys and values on attention computation.
 
-vLLM is a fast and easy-to-use library for LLM inference and serving.
+- The varying importance of tokens.
 
-vLLM is fast with:
+- The diverse dynamic sparsity patterns across attention heads. 
 
-- State-of-the-art serving throughput
-- Efficient management of attention key and value memory with **PagedAttention**
-- Continuous batching of incoming requests
-- Fast model execution with CUDA/HIP graph
-- Quantization: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978), [SqueezeLLM](https://arxiv.org/abs/2306.07629)
-- Optimized CUDA kernels
+These levels of differentiation introduce **irregular memory usage patterns across different requests and attention heads**, posing significant scalability challenges for memory management. To address these challenges, DiffKV proposes an **on-GPU memory manager** that compacts fragmented free memory list into contiguous regions in parallel, effectively translating sparsity in the KV cache into performance gains.
 
-vLLM is flexible and easy to use with:
+DiffKV is built on top of vLLM (commit [1db83e3](https://github.com/vllm-project/vllm/commit/1db83e31a2468cae37f326a642c0a4c4edbb5e4f)) and currently supports the following HuggingFace model architectures:
 
-- Seamless integration with popular Hugging Face models
-- High-throughput serving with various decoding algorithms, including *parallel sampling*, *beam search*, and more
-- Tensor parallelism support for distributed inference
-- Streaming outputs
-- OpenAI-compatible API server
-- Support NVIDIA GPUs and AMD GPUs
+- **LLaMA-2 & LLaMA-3** (`meta-llama/Llama-2-7b-hf`, `meta-llama/Meta-Llama-3-8B-Instruct`, `meta-llama/Meta-Llama-3-70B-Instruct`, etc.)
+- **Mistral** (`mistralai/Mistral-7B-v0.1`, etc.)
+- **Mixtral** (`mistralai/Mixtral-8x7B-v0.1`, etc.)
+- **Qwen-2.5** (`Qwen/Qwen2.5-7B-Instruct`, `Qwen/Qwen2.5-32B-Instruct`, `Qwen/QwQ-32B`, etc.)
+- **Qwen-3** (`Qwen/Qwen3-8B`, `Qwen/Qwen3-32B`, etc.)
+- **Qwen-3 MoE** (`Qwen/Qwen3-30B-A3B`, etc.)
 
-vLLM seamlessly supports many Hugging Face models, including the following architectures:
+DiffKV supports model weight quantization using [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978), and FP8 formats.
 
-- Aquila & Aquila2 (`BAAI/AquilaChat2-7B`, `BAAI/AquilaChat2-34B`, `BAAI/Aquila-7B`, `BAAI/AquilaChat-7B`, etc.)
-- Baichuan & Baichuan2 (`baichuan-inc/Baichuan2-13B-Chat`, `baichuan-inc/Baichuan-7B`, etc.)
-- BLOOM (`bigscience/bloom`, `bigscience/bloomz`, etc.)
-- ChatGLM (`THUDM/chatglm2-6b`, `THUDM/chatglm3-6b`, etc.)
-- DeciLM (`Deci/DeciLM-7B`, `Deci/DeciLM-7B-instruct`, etc.)
-- Falcon (`tiiuae/falcon-7b`, `tiiuae/falcon-40b`, `tiiuae/falcon-rw-7b`, etc.)
-- GPT-2 (`gpt2`, `gpt2-xl`, etc.)
-- GPT BigCode (`bigcode/starcoder`, `bigcode/gpt_bigcode-santacoder`, etc.)
-- GPT-J (`EleutherAI/gpt-j-6b`, `nomic-ai/gpt4all-j`, etc.)
-- GPT-NeoX (`EleutherAI/gpt-neox-20b`, `databricks/dolly-v2-12b`, `stabilityai/stablelm-tuned-alpha-7b`, etc.)
-- InternLM (`internlm/internlm-7b`, `internlm/internlm-chat-7b`, etc.)
-- LLaMA & LLaMA-2 (`meta-llama/Llama-2-70b-hf`, `lmsys/vicuna-13b-v1.3`, `young-geng/koala`, `openlm-research/open_llama_13b`, etc.)
-- Mistral (`mistralai/Mistral-7B-v0.1`, `mistralai/Mistral-7B-Instruct-v0.1`, etc.)
-- Mixtral (`mistralai/Mixtral-8x7B-v0.1`, `mistralai/Mixtral-8x7B-Instruct-v0.1`, etc.)
-- MPT (`mosaicml/mpt-7b`, `mosaicml/mpt-30b`, etc.)
-- OPT (`facebook/opt-66b`, `facebook/opt-iml-max-30b`, etc.)
-- Phi (`microsoft/phi-1_5`, `microsoft/phi-2`, etc.)
-- Qwen (`Qwen/Qwen-7B`, `Qwen/Qwen-7B-Chat`, etc.)
-- Yi (`01-ai/Yi-6B`, `01-ai/Yi-34B`, etc.)
+> **Note:**  
+> The `main` branch of DiffKV quantizes each token (typically with a hidden size of 128) using a **single** set of metadata (scale and zero point).  
+> The `group_quantization` branch introduces an enhanced version of DiffKV that supports quantizing each token with **multiple** sets of metadata, which is potentially more effective for GQA architectures with higher queries-per-KV ratios, as well as for long CoT (Chain-of-Thought) generation.
 
-Install vLLM with pip or [from source](https://vllm.readthedocs.io/en/latest/getting_started/installation.html#build-from-source):
+
+
+## Installation
+
+#### Prerequisites:
+- Python >= 3.10
+- Nvidia GPUs with Ada, Hopper or newer architectures
+
+#### Install DiffKV from source:
 
 ```bash
-pip install vllm
+pip install -e .
 ```
 
-## Getting Started
 
-Visit our [documentation](https://vllm.readthedocs.io/en/latest/) to get started.
-- [Installation](https://vllm.readthedocs.io/en/latest/getting_started/installation.html)
-- [Quickstart](https://vllm.readthedocs.io/en/latest/getting_started/quickstart.html)
-- [Supported Models](https://vllm.readthedocs.io/en/latest/models/supported_models.html)
+## Usage
 
-## Contributing
+### Getting Started
 
-We welcome and value any contributions and collaborations.
-Please check out [CONTRIBUTING.md](./CONTRIBUTING.md) for how to get involved.
+> **Note:** Before running any scripts, make sure to add the DiffKV installation directory to your `PYTHONPATH`:
+> ```bash
+> export PYTHONPATH=$DiffKV_DIR:$PYTHONPATH
+> ```
+
+The `examples/` folder contains several demo scripts for experimenting with DiffKV, including:
+`debug_generate_example.py`, `debug_qwen2.py` and `debug.py`.
+Each script has a corresponding shell command (`*.sh`) for execution. Be sure to update the `PYTHONPATH` inside the shell scripts before running them.
+
+
+### Generation Quality Experiments
+
+The `param_tuning/` folder contains scripts for evaluating DiffKV's generation quality on several benchmarks. Specifically:
+
+- `try_calibrate_group_*.sh` scripts contain commands to run hyperparameter calibration experiments for $\alpha_{high}$ and $\alpha_{low}$.
+- `read_calibrate_per_token_thresh.py` parses the raw experiment outputs and summarizes the results.
+
+Similarly:
+
+- `try_$MODEL.sh` scripts are used to evaluate generation quality for various models and benchmarks.
+- `read_$MODEL_per_token_thresh.py` scripts parse and summarize the corresponding results.
+
+> **Note:** Before running any `read_*_per_token_thresh.py` scripts, set the DiffKV logs directory as an environment variable:
+> ```bash
+> export DIFFKV_LOG_DIR=${PATH_TO_DiffKV}/logs
+> ```
+> Or modify the default path directly in the script:
+> ```python  
+> LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '{PATH_TO_DiffKV}/logs')
+> ```
+
+
+### Functional Verification of the Artifact ###
+
+To quickly verify the artifact setup:
+
+1. Create a `logs/` directory in your DiffKV installation directory:
+    ```bash
+    mkdir -p DiffKV/logs
+   ```
+  
+2. In the `param_tuning/` folder, run the script:
+    ```bash
+    ./try_small_models.sh
+    ```
+   Make sure `PYTHONPATH` is set to your DiffKV installation directory. This will save the raw results in: `DiffKV/logs/per_token_thresh/`.
+
+3. Parse and summarize the results:
+    ``` bash
+    python read_small_models_results.py
+    ```
+   The summary will be saved in: `DiffKV/logs/per_token_thresh_compress_summary/`.
+   
+
+## Quantization Configuration Guide
+
+To add or modify quantization options, you must update several components in lockstep. This guide walks through each file and the required changes.
+
+---
+
+### 1. `vllm/config.py::CacheConfig`
+
+- **Parameter:** `self.quantized_kv_bits`\
+  A list of supported quantization tuples `(kbits, vbits)`:
+
+  ```python
+  self.quantized_kv_bits = [
+      self.quantized_kv_bits = [
+          (8, 8),
+          (8, 4),
+          (8, 2),
+          (4, 4),
+          (4, 2),
+          (4, 1),
+      ]
+  ]
+  ```
+
+- **Method:** `CacheConfig.compute_cache_block()`\
+  Computes:
+
+  1. Optimal block size (in INT16 units).
+  2. Tokens per page (for both high- and low-precision data).
+
+- **Constructor args:**
+
+  - `num_thread_groups_k`: Number of key thread-groups per warp.
+  - `key_vec_size` & `value_vec_size`: Number of INT16 values read contiguously by each thread to maximize memory bandwidth.
+
+---
+
+### 2. CUDA Kernels: `csrc/cache_kernel.cu`
+
+1. **Register new quant configs** in these macros:
+
+   - `CALL_PROMPT_PHASE_CACHE_LAUNCHER_QUANT_CONFIG`
+   - `CALL_DECODE_PHASE_CACHE_LAUNCHER_QUANT_CONFIG`
+
+   ```cpp
+   #define CALL_PROMPT_PHASE_CACHE_LAUNCHER_QUANT_CONFIG(T, HEAD_SIZE)               \
+   if (quant_config == std::vector<int>{                                              \
+       kbits_high, vbits_high, kbits_low, vbits_low,                                 \
+   }) {                                                                                \
+       assert(num_tokens_per_page_high == <computed_high>);                           \
+       assert(num_tokens_per_page_low  == <computed_low>);                            \
+       assert(thread_group_size_v      == <computed_vgroup_size>);                     \
+       LAUNCH_CACHE_KERNEL_PROMPT_PHASE(                                              \
+           T, HEAD_SIZE,
+           kbits_high, vbits_high, kbits_low, vbits_low,
+           num_tokens_per_page_high,
+           num_tokens_per_page_low,
+           thread_group_size_v
+       );
+   }
+   ```
+
+2. **Page-size assertions** in:
+
+   - `compress_and_append_cache_decode_phase()`
+   - `compress_and_append_cache_prompt_phase()`
+
+   ```cpp
+   assert(unified_page_size == <computed_page_size>);
+   ```
+
+> ⚠️ Ensure all `assert(...)` values match your `compute_cache_block()` outputs.
+
+---
+
+### 3. Long-prompt Kernel: `csrc/long_prompt_cache_kernels.cu`
+
+- Follow the same pattern as above:
+  1. Register in `CALL_PROMPT_PHASE_CACHE_LAUNCHER_QUANT_CONFIG`.
+  2. Update the page-size assertion in `compress_and_append_cache_long_prompt_phase()`.
+
+---
+
+### 4. Sparse Attention: `csrc/attention/sparse_attention_kernels.cu`
+
+- Add your config to the `CALL_LAUNCHER_QUANT_CONFIG` macro:
+  ```cpp
+  #define CALL_LAUNCHER_QUANT_CONFIG(T)                                      \
+  if (quant_config == std::vector<int>{                                       \
+      kbits_high, vbits_high, kbits_low, vbits_low,                          \
+  }) {                                                                        \
+      assert(num_tokens_per_page_high == <computed_high>);                     \
+      assert(num_tokens_per_page_low  == <computed_low>);                      \
+      assert(thread_group_size_v      == <computed_vgroup_size>);               \
+      CALL_LAUNCHER(
+          T,
+          kbits_high, vbits_high, kbits_low, vbits_low,
+          num_tokens_per_page_high,
+          num_tokens_per_page_low,
+          thread_group_size_v
+      );
+  }
+  ```
+
+---
+
+Keep all components synchronized. Any mismatch between code, assertions, and computed values will cause runtime errors.
+
+
 
 ## Citation
-
-If you use vLLM for your research, please cite our [paper](https://arxiv.org/abs/2309.06180):
+If you use DiffKV for your research, please cite our [paper](https://arxiv.org/pdf/2412.03131):
 ```bibtex
-@inproceedings{kwon2023efficient,
-  title={Efficient Memory Management for Large Language Model Serving with PagedAttention},
-  author={Woosuk Kwon and Zhuohan Li and Siyuan Zhuang and Ying Sheng and Lianmin Zheng and Cody Hao Yu and Joseph E. Gonzalez and Hao Zhang and Ion Stoica},
-  booktitle={Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles},
-  year={2023}
+@inproceedings{zhang2025diffkv,
+  title={DiffKV: Differentiated Memory Management for Large Language Models with Parallel KV Compaction},
+  author={Yanqi Zhang, Yuwei Hu, Runyuan Zhao, John C.S. Lui and Haibo Chen},
+  booktitle={Proceedings of the ACM SIGOPS 31th Symposium on Operating Systems Principles},
+  year={2025}
 }
 ```
-# DiffKV, based on vLLM 1db83e3

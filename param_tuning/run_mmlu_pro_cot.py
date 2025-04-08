@@ -16,6 +16,8 @@ from vllm.dataset import (
     MMLUProCoTDataset,
 )
 
+from util import maybe_destroy_process_group
+
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -33,7 +35,7 @@ def add_mmlu_pro_cot_questions(
     engine: LLMEngine,
     dataset: MMLUProCoTDataset,
     questions: List[MMLUProCoTQuestion],
-    quant_configs: List[Tuple[int]],
+    quant_configs: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -43,7 +45,6 @@ def add_mmlu_pro_cot_questions(
             request_id=str(REQUEST_ID),
             prompt=prompt,
             sampling_params=SamplingParams,
-            attn_prune_thresh=0.0,
             quant_configs=quant_configs, 
             compress_configs=compress_configs,
         )
@@ -173,6 +174,8 @@ def main(args: argparse.Namespace):
         kv_quant_thresh=args.kv_quant_thresh,
         )
     print(f'--- time elapsed = {time.time() - t0}s ---')
+    
+    maybe_destroy_process_group()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

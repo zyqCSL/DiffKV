@@ -286,6 +286,9 @@ def main(args: argparse.Namespace):
     model_gen = args.model_gen
     model_size = args.model_size
     
+    global GPUS
+    GPUS = [i + args.start_gpu_id for i in GPUS]
+    
     if args.model == 'llama':
         if model_gen == 2:
             assert model_size in [7, 13, 70]
@@ -319,7 +322,7 @@ def main(args: argparse.Namespace):
     assert args.dataset in ['squad']
     args.log_path = (f'{args.log_path}/{args.dataset}/'
                      f'k{args.kbits_high}v{args.vbits_high}_k{args.kbits_low}v{args.vbits_low}/'
-                     f'target_{int(100 *args.target_mem_util)}_buffer_{args.kv_buffer}/'
+                     f'buffer_{args.kv_buffer}/'
                      f'p{int(1000 * args.kv_prune_thresh)}_q{int(1000 * args.kv_quant_thresh)}/'
                      )
     os.makedirs(args.log_path, exist_ok=True)
@@ -374,6 +377,7 @@ if __name__ == "__main__":
     parser.add_argument('--label', type=str, default='validation')
     parser.add_argument('--v1', action='store_true')
     parser.add_argument('--num-samples', type=int, default=0)
+    parser.add_argument('--start-gpu-id', type=int, default=0)
     
     # dataset specific compression params
     parser.add_argument('--kv-buffer', type=int, default=32)
@@ -383,9 +387,6 @@ if __name__ == "__main__":
     parser.add_argument('--vbits-low', type=int, required=True)
     parser.add_argument('--kv-prune-thresh', type=float, required=True)
     parser.add_argument('--kv-quant-thresh', type=float, required=True)
-    parser.add_argument('--target-mem-util', type=float, required=True)
-    # parser.add_argument('--kv-prune-ratio', type=float, required=True)
-    # parser.add_argument('--kv-quant-ratio', type=float, required=True)
     
     # model config
     parser.add_argument('--model', type=str, default='llama')

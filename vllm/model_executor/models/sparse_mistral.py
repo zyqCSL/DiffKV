@@ -32,6 +32,7 @@ from vllm.model_executor.layers.activation import SiluAndMul
 # from vllm.model_executor.layers.attention import PagedAttention
 from vllm.model_executor.layers.sparse_attention_big_kernel import SparsePagedAttention
 from vllm.model_executor.layers.layernorm import RMSNorm
+from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.linear import (LinearMethodBase,
                                                MergedColumnParallelLinear,
                                                QKVParallelLinear,
@@ -58,17 +59,23 @@ class MistralMLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size, [intermediate_size] * 2,
             bias=False,
-            linear_method=linear_method)
-        self.down_proj = RowParallelLinear(intermediate_size,
-                                           hidden_size,
-                                           bias=False,
-                                           linear_method=linear_method)
+            quant_config=quant_config,
+            prefix=f"{prefix}.gate_up_proj",
+        )
+        self.down_proj = RowParallelLinear(
+            intermediate_size,
+            hidden_size,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.down_proj",
+        )
         if hidden_act != "silu":
             raise ValueError(f"Unsupported activation: {hidden_act}. "
                              "Only silu is supported for now.")
@@ -83,16 +90,20 @@ class MistralMLP(nn.Module):
 
 class MistralAttention(nn.Module):
 
-    def __init__(self,
-                 layer: int,
-                 hidden_size: int,
-                 num_heads: int,
-                 num_kv_heads: int,
-                 kv_buffer_size: int,
-                 max_position: int = 4096 * 32,
-                 rope_theta: float = 10000,
-                 linear_method: Optional[LinearMethodBase] = None,
-                 sliding_window: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        layer: int,
+        hidden_size: int,
+        num_heads: int,
+        num_kv_heads: int,
+        kv_buffer_size: int,
+        max_position: int = 4096 * 32,
+        rope_theta: float = 10000,
+        # linear_method: Optional[LinearMethodBase] = None,
+        sliding_window: Optional[int] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
+    ) -> None:
         super().__init__()
         self.layer = layer
         self.hidden_size = hidden_size
@@ -118,8 +129,7 @@ class MistralAttention(nn.Module):
         self.sliding_window = sliding_window
         
         self.kv_buffer_size = kv_buffer_size
-        # NOTE: set sliding window to None here for temporary testing
-        # We should support sliding window later
+        # TODO: set sliding window to None here for testing
         # sparse kv config
         self.sliding_window = None
 
@@ -129,13 +139,15 @@ class MistralAttention(nn.Module):
             self.total_num_heads,
             self.total_num_kv_heads,
             bias=False,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.qkv_proj",
         )
         self.o_proj = RowParallelLinear(
             self.total_num_heads * self.head_dim,
             hidden_size,
             bias=False,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.o_proj",
         )
 
         self.rotary_emb = get_rope(
@@ -181,7 +193,8 @@ class MistralDecoderLayer(nn.Module):
         layer: int,
         config: MistralConfig,
         kv_buffer_size: int,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -195,14 +208,16 @@ class MistralDecoderLayer(nn.Module):
             kv_buffer_size=kv_buffer_size,
             max_position=config.max_position_embeddings,
             rope_theta=rope_theta,
-            linear_method=linear_method,
-            sliding_window=config.sliding_window
+            sliding_window=config.sliding_window,
+            quant_config=quant_config,
+            prefix=f"{prefix}.self_attn",
         )
         self.mlp = MistralMLP(
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            prefix=f"{prefix}.mlp"
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -243,8 +258,9 @@ class MistralModel(nn.Module):
     def __init__(
         self,
         config: MistralConfig,
-        kv_buffer_size: Union[int, List[int]],
-        linear_method: Optional[LinearMethodBase] = None,
+        kv_buffer_size: int,
+        quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.config = config
@@ -256,25 +272,15 @@ class MistralModel(nn.Module):
             config.hidden_size,
         )
         
-        if type(kv_buffer_size) is list:
-            self.layers = nn.ModuleList([
-                MistralDecoderLayer(
-                    layer,
-                    config,
-                    kv_buffer_size[layer],
-                    linear_method)
-                for layer in range(config.num_hidden_layers)
-            ])
-        else:
-            assert type(kv_buffer_size) is int
-            self.layers = nn.ModuleList([
-                MistralDecoderLayer(
-                    layer,
-                    config,
-                    kv_buffer_size,
-                    linear_method)
-                for layer in range(config.num_hidden_layers)
-            ])
+        self.layers = nn.ModuleList([
+            MistralDecoderLayer(
+                layer,
+                config,
+                kv_buffer_size,
+                quant_config,
+                f"{prefix}.layers.{layer}")
+            for layer in range(config.num_hidden_layers)
+        ])
         
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -305,17 +311,17 @@ class MistralForCausalLM(nn.Module):
     def __init__(
         self,
         config: MistralConfig,
-        kv_buffer_size: Union[int, List[int]],
+        kv_buffer_size: int,
         max_kv_slots: Optional[int] = None,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
     ) -> None:
         super().__init__()
         self.config = config
-        self.linear_method = linear_method
         self.model = MistralModel(
             config,
             kv_buffer_size, 
-            linear_method)
+            quant_config,
+            prefix="model")
         self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size)
         self.sampler = Sampler(config.vocab_size)
 

@@ -13,6 +13,8 @@ from vllm.dataset import (
     WikiDataset,
 )
 
+from util import maybe_destroy_process_group
+
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -25,7 +27,7 @@ def add_modeling_requests(
     engine: LLMEngine,
     dataset: ModelingDataset,
     requests: List[Tuple[List[int], SamplingParams]],
-    quant_configs: List[Tuple[int]],
+    quant_configs: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -34,7 +36,6 @@ def add_modeling_requests(
             request_id=str(REQUEST_ID),
             prompt=None,
             sampling_params=sampling_params,
-            attn_prune_thresh=0.0,
             prompt_token_ids=prompt_token_ids,
             quant_configs=quant_configs, 
             compress_configs=compress_configs,
@@ -171,6 +172,8 @@ def main(args: argparse.Namespace):
         kv_prune_thresh=args.kv_prune_thresh,
         kv_quant_thresh=args.kv_quant_thresh,
         label=args.data_label)
+    
+    maybe_destroy_process_group()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

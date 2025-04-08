@@ -518,7 +518,6 @@ class Scheduler:
                 is_prompt=scheduler_outputs.prompt_run,
                 seq_data=seq_data,
                 sampling_params=seq_group.sampling_params,
-                attn_prune_thresh=seq_group.attn_prune_thresh,
                 num_bits_k_high=seq_group.quant_configs[0],
                 num_bits_v_high=seq_group.quant_configs[1],
                 num_bits_k_low=seq_group.quant_configs[2],

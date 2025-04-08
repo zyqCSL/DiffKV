@@ -8,6 +8,9 @@ import torch
 
 from vllm._C import cuda_utils
 
+from vllm.logger import init_logger
+logger = init_logger(__name__)
+
 
 class Device(enum.Enum):
     GPU = enum.auto()
@@ -56,6 +59,13 @@ def in_wsl() -> bool:
 
 
 def get_open_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+    port = 0
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("", port))
+                return s.getsockname()[1]
+        except OSError:
+            port += 1  # Increment port number if already in use
+            # logger.info("Port %d is already in use, trying port %d",
+            #             port - 1, port)

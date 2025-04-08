@@ -233,7 +233,6 @@ class Worker:
             self.gpu_cache,
             self.block_manager.block_tables,
             self.block_manager.kv_len_tables,
-            self.block_manager.sparsity_tables,
             self.block_manager.compress_config_tables,
             self.cache_config.key_vec_size,
             self.cache_config.value_vec_size)

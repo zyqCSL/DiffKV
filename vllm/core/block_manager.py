@@ -205,10 +205,6 @@ class BlockSpaceManager:
             (self.max_num_seqs, 2),
             1, dtype=torch.float32, device='cuda')
 
-        self.sparsity_tables = torch.full(
-            (self.max_num_seqs, self.num_layers, self.num_heads),
-            0, dtype=torch.uint64, device='cuda')
-
         # quant configs of each sequence. NOTE: now we only keep it in host memory
         self.quant_config_tables = torch.zeros(
             (self.max_num_seqs, 4), dtype=torch.int16, device='cpu')
@@ -333,8 +329,6 @@ class BlockSpaceManager:
         # TODO: debug, remove later
         self.block_tables[slot_ids] = _PAD_BLOCK
         self.block_num_tables[slot_ids] = _PAD_LEN
-        for slot_id in slot_ids:
-            self.sparsity_tables[slot_id] = 0
 
         # requires reset as it's used to compute max_context_len
         self.kv_len_tables[slot_ids] = _PAD_LEN
@@ -628,13 +622,10 @@ class BlockSpaceManager:
             self.num_finished_seqs += 1
             self.accum_kv_lens += self.kv_len_tables[slot_id]
             self.accum_block_nums += self.block_num_tables[slot_id]
-            # self.accum_num_critical_tokens += self.sparsity_tables[slot_id]
-            self.accum_num_critical_tokens += np.array(self.sparsity_tables[slot_id].cpu())
             
             # TODO: remove later
             # print('freed kv_len = ', torch.sum(self.kv_len_tables[slot_id], dim=(0, 1)))
             # print('freed block_num = ', torch.sum(self.block_num_tables[slot_id], dim=(0, 1)))
-            # print(f'seq_id {seq_id} mean critical tokens = ', torch.mean(self.sparsity_tables[slot_id].float()))
 
         # write freed blocks to free_blocks
         # NOTE: 2 for two quant configs
@@ -667,8 +658,6 @@ class BlockSpaceManager:
             self.gpu_allocator.block_refs)
         # requires reset as it's used to compute max_context_len
         self.kv_len_tables[slot_id].fill_(_PAD_LEN)
-        # must start from 0
-        self.sparsity_tables[slot_id].fill_(0)
 
         # self.block_tables[slot_id].fill_(_PAD_BLOCK)
         # self.block_num_tables[slot_id].fill_(_PAD_LEN)

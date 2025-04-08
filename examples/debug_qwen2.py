@@ -7,11 +7,20 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 from vllm import LLM, SamplingParams
 
+MAX_TOKENS = 1024
+
 model = LLM(
     # '/data1/modelscope/Qwen2.5-7B-Instruct',
     # '/data1/modelscope/Qwen2.5-32B-Instruct',
     # '/data1/modelscope/Qwen2.5-72B-Instruct',
-    '/data1/modelscope/QwQ-32B',
+    # '/data1/modelscope/QwQ-32B',
+    # '/data1/modelscope/Qwen3-14B',
+    # '/data1/modelscope/Qwen3-8B',
+    # '/data1/modelscope/Qwen3-8B-AWQ',
+    # '/data1/modelscope/Qwen3-8B-FP8',
+    # '/data1/modelscope/Qwen3-30B-A3B',
+    # '/data1/modelscope/Qwen3-30B-A3B-AWQ',
+    '/data1/modelscope/Qwen3-30B-A3B-FP8',
     dtype='float16',
     gpu_memory_utilization=0.8,
     load_format='safetensors',
@@ -21,7 +30,7 @@ model = LLM(
 
 sampling_params = SamplingParams(
     temperature=0.6, top_p=0.95, min_p=0.0, 
-    max_tokens=8192, stop=["<\think>"])  # greedy sampling
+    max_tokens=MAX_TOKENS, stop=["<\think>"])
 
 # gives wrong answer in the 1st batch
 problems = [
@@ -49,9 +58,9 @@ for p in problems:
 # [kbits_high, vbits_high, kbits_low, vbits_low]
 quant_configs = [
     # [8, 8, 8, 4],
-    # [8, 4, 4, 2],
+    [8, 4, 4, 2],
     # [8, 8, 4, 4],
-    [8, 8],
+    # [8, 8],
     # [8, 4],
     # [4, 4, 4, 2],
     # [4, 4],
@@ -59,14 +68,9 @@ quant_configs = [
     # [4, 1],
 ]
 
-# [prune_thresh, quant_thresh, prune_ratio, quant_ratio]
-# compress_config = [0.995, 0.95, 0.5, 0.25]
-
-compress_config = [0.0, 0.01]
-compress_config = [0.0, 0.0]
-attn_prune_thresh = 0.0
-
-# compress_config = [1.0, 1.0, 1.0, 1.0]
+# [prune_thresh (alpha_low), quant_thresh (alpha_high)]
+compress_config = [0.0, 1.0]
+# compress_config = [0.0, 0.0]
 
 TESTS = 1
 for _ in range(TESTS):
@@ -77,7 +81,7 @@ for _ in range(TESTS):
         else:
             _compress_config = compress_config
         outputs = model.generate(prompts, sampling_params, 
-                                 attn_prune_thresh, quant_config, _compress_config)
+                                 quant_config, _compress_config)
         for output in outputs:
             prompt = output.prompt
             generated_text = output.outputs[0].text
