@@ -449,19 +449,21 @@ class Scheduler:
                 running.append(seq_group)
                 if not sched_quant_config:
                     sched_quant_config = seq_group.quant_configs
-                    sched_quant_groups = seq_group.quant_groups           
-        self._append_slot(
-            seq_ids=running_seq_ids,
-            kbits_high=sched_quant_config[0],
-            vbits_high=sched_quant_config[1],
-            kbits_low=sched_quant_config[2],
-            vbits_low=sched_quant_config[3],
-            kgroups_high=sched_quant_groups[0],
-            vgroups_high=sched_quant_groups[1],
-            kgroups_low=sched_quant_groups[2],
-            vgroups_low=sched_quant_groups[3],
-        )
-        self.running = running
+                    sched_quant_groups = seq_group.quant_groups
+
+        # if running_seq_ids is not empty, append new slots
+        if len(running_seq_ids) > 0:
+            self._append_slot(
+                seq_ids=running_seq_ids,
+                kbits_high=sched_quant_config[0],
+                vbits_high=sched_quant_config[1],
+                kbits_low=sched_quant_config[2],
+                vbits_low=sched_quant_config[3],
+                kgroups_high=sched_quant_groups[0],
+                vgroups_high=sched_quant_groups[1],
+                kgroups_low=sched_quant_groups[2],
+                vgroups_low=sched_quant_groups[3],
+            )
 
         # Swap in the sequence groups in the SWAPPED state if possible.
         self.swapped = self.policy.sort_by_priority(now, self.swapped)

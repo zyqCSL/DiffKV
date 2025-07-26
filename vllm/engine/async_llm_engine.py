@@ -187,45 +187,29 @@ class _AsyncLLMEngine(LLMEngine):
         if scheduler_outputs.is_empty():
             return ignored
 
-        # Execute the model.
-        output = await self._run_workers_async(
+        # execute the model
+        all_outputs = self.orchestrator.run_workers(
             "execute_model",
+            get_all_outputs=True,
             seq_group_metadata_list=seq_group_metadata_list,
-            blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
-            blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
-            blocks_to_copy=scheduler_outputs.blocks_to_copy,
         )
 
-        return self._process_model_outputs(output, scheduler_outputs) + ignored
+        # update metadata of the centralized memory manager
+        free_gpu_blocks = [x[1] for x in all_outputs]
+        self.scheduler.memory_manager.update_free_gpu_blocks(free_gpu_blocks)
+        free_cpu_blocks = [x[2] for x in all_outputs]
+        self.scheduler.memory_manager.update_free_cpu_blocks(free_cpu_blocks)
 
-    async def _run_workers_async(
-        self,
-        method: str,
-        *args,
-        get_all_outputs: bool = False,
-        **kwargs,
-    ) -> Any:
-        """Runs the given method on all workers."""
-        coros = []
-        for worker in self.workers:
-            if self.parallel_config.worker_use_ray:
-                coros.append(
-                    worker.execute_method.remote(method, *args, **kwargs))
-            else:
-                executor = getattr(worker, method)
-                coros.append(asyncio.get_event_loop().run_in_executor(
-                    None, partial(executor, *args, **kwargs)))
-
-        all_outputs = await asyncio.gather(*coros)
-
-        if get_all_outputs:
-            return all_outputs
-
-        # Make sure all workers have the same results.
-        output = all_outputs[0]
+        model_output = all_outputs[0][0]
+        # make sure all workers have the same model output
         for other_output in all_outputs[1:]:
-            assert output == other_output
-        return output
+            if model_output != other_output[0]:
+                for seq_group in scheduler_outputs.scheduled_seq_groups:
+                    for seq_id in seq_group.seqs_dict:
+                        _seq = seq_group.seqs_dict[seq_id]
+                        # print(f'seq {seq_id} prompt = {_seq.prompt}, output = {_seq.output_text}, recent tokens = {_seq.data.output_token_ids[-50:]}')
+            assert model_output == other_output[0]
+        return self._process_model_outputs(model_output, scheduler_outputs) + ignored
 
 
 class AsyncLLMEngine:
@@ -364,6 +348,8 @@ class AsyncLLMEngine:
         request_id: str,
         prompt: Optional[str],
         sampling_params: SamplingParams,
+        quant_configs: List[int],
+        compress_configs: List[float],
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
     ) -> AsyncStream:
@@ -395,6 +381,8 @@ class AsyncLLMEngine:
             request_id,
             prompt=prompt,
             sampling_params=sampling_params,
+            quant_configs=quant_configs,
+            compress_configs=compress_configs,
             prompt_token_ids=prompt_token_ids,
             arrival_time=arrival_time)
 
@@ -404,6 +392,8 @@ class AsyncLLMEngine:
         self,
         prompt: Optional[str],
         sampling_params: SamplingParams,
+        quant_configs: List[int],
+        compress_configs: List[float],
         request_id: str,
         prompt_token_ids: Optional[List[int]] = None
     ) -> AsyncIterator[RequestOutput]:
@@ -433,6 +423,8 @@ class AsyncLLMEngine:
             stream = await self.add_request(request_id,
                                             prompt,
                                             sampling_params,
+                                            quant_configs,
+                                            compress_configs,
                                             prompt_token_ids=prompt_token_ids,
                                             arrival_time=arrival_time)
 
@@ -490,14 +482,14 @@ class AsyncLLMEngine:
         engine_configs = engine_args.create_engine_configs()
         parallel_config = engine_configs[2]
         # Initialize the cluster.
-        distributed_init_method, placement_group = initialize_cluster(
-            parallel_config, engine_args.engine_use_ray)
+        # distributed_init_method, placement_group = initialize_cluster(
+        #     parallel_config, engine_args.engine_use_ray)
         # Create the async LLM engine.
         engine = cls(parallel_config.worker_use_ray,
                      engine_args.engine_use_ray,
                      *engine_configs,
-                     distributed_init_method,
-                     placement_group,
+                    #  distributed_init_method,
+                    #  placement_group,
                      log_requests=not engine_args.disable_log_requests,
                      log_stats=not engine_args.disable_log_stats,
                      max_log_len=engine_args.max_log_len,
