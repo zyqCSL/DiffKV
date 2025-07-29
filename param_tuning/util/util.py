@@ -1,4 +1,4 @@
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Tuple
 import os
 
 # log filtering
@@ -185,6 +185,7 @@ def compose_codegen_cmd(
     
     return cmd
 
+
 def maybe_destroy_process_group():
     import torch
     if torch.distributed.is_initialized():
@@ -192,3 +193,45 @@ def maybe_destroy_process_group():
         torch.distributed.destroy_process_group()
     # else:
     #     print('Warning: No distributed process group to destroy.')
+
+BITS_TO_QUANT_GROUPS = {
+    8: 1,
+    4: 2,
+    2: 4,
+}
+
+def get_quant_configs_and_groups(
+    kbits_high: int,
+    vbits_high: int,
+    kbits_low: int,
+    vbits_low: int,
+    cot: bool = False,
+) -> Tuple[List[int], List[int]]:
+    if not cot:
+        if kbits_high == kbits_low and vbits_high == vbits_low:
+            return [kbits_high, vbits_high], [1, 1]
+        else:
+            return [kbits_high, vbits_high, kbits_low, vbits_low], [1, 1, 1, 1]
+    
+    # For now, only enable group quantization for CoT  
+    if kbits_high == kbits_low and vbits_high == vbits_low:
+        quant_configs = [kbits_high, vbits_high]
+        if kbits_high == vbits_high:
+            # NOTE: this is for baseline experiment (e.g. k4v4 has 1 group for both key and value)
+            quant_groups = [1, 1]
+        else:
+            quant_groups = [BITS_TO_QUANT_GROUPS[kbits_high], BITS_TO_QUANT_GROUPS[vbits_high]]
+    else:
+        quant_configs = [kbits_high, vbits_high, 
+                         kbits_low, vbits_low]
+        quant_groups = []
+        if kbits_high == vbits_high:
+            quant_groups = [1, 1]
+        else:
+            quant_groups = [BITS_TO_QUANT_GROUPS[kbits_high], BITS_TO_QUANT_GROUPS[vbits_high]]
+        if kbits_low == vbits_low:
+            quant_groups += [1, 1]
+        else:
+            quant_groups += [BITS_TO_QUANT_GROUPS[kbits_low], BITS_TO_QUANT_GROUPS[vbits_low]]
+    
+    return quant_configs, quant_groups

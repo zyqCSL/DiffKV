@@ -120,6 +120,7 @@ class LLM:
         prompts: Optional[Union[str, List[str]]] = None,
         sampling_params: Optional[SamplingParams] = None,
         quant_configs: List[int] = [],
+        quant_groups: List[int] = [],
         compress_configs: List[float] = [],
         prompt_token_ids: Optional[List[List[int]]] = None,
         use_tqdm: bool = True,
@@ -164,7 +165,8 @@ class LLM:
             token_ids = None if prompt_token_ids is None else prompt_token_ids[
                 i]
             self._add_request(prompt, sampling_params, 
-                              quant_configs, compress_configs, 
+                              quant_configs, quant_groups,
+                              compress_configs, 
                               token_ids)
         return self._run_engine(use_tqdm)
 
@@ -172,13 +174,14 @@ class LLM:
         self,
         prompt: Optional[str],
         sampling_params: SamplingParams,
-        quant_configs: List[Tuple[int, int]],
+        quant_configs: List[int],
+        quant_groups: List[int],
         compress_configs: List[float],
         prompt_token_ids: Optional[List[int]],
     ) -> None:
         request_id = str(next(self.request_counter))
-        self.llm_engine.add_request(request_id, prompt, sampling_params,
-                                    quant_configs, compress_configs,
+        self.llm_engine.add_request(request_id, prompt, sampling_params, 
+                                    quant_configs, quant_groups, compress_configs,
                                     prompt_token_ids)
 
     def _run_engine(self, use_tqdm: bool) -> List[RequestOutput]:

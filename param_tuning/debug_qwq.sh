@@ -1,7 +1,7 @@
 export PYTHONPATH=/home/zhangyanqi/git_repos/DiffKV:$PYTHONPATH
 # # gsm8k 88-88
-CUDA_VISIBLE_DEVICES=2,3 RAY_DEDUP_LOGS=0 \
-    python3 /home/zhangyanqi/Projects/eLLM/param_tuning/run_minerva_math.py \
+CUDA_VISIBLE_DEVICES=0,1 RAY_DEDUP_LOGS=0 \
+    python3 /home/zhangyanqi/git_repos/DiffKV/param_tuning/run_aime.py \
         --model /data1/modelscope/QwQ-32B \
         --load-format safetensors \
         --enforce-eager \
@@ -19,6 +19,6 @@ CUDA_VISIBLE_DEVICES=2,3 RAY_DEDUP_LOGS=0 \
         --tensor-parallel-size 2 \
         --prompt-limit 40960 \
         --max-num-seqs 16 \
-        --log-path ../logs/per_token_thresh/qwq-32b/minerva_math/k8v8_k8v8/target_10_buffer_64/p0_q100/round_0/eval_0 \
-        --indices-csv ../logs/per_token_thresh/qwq-32b/minerva_math/k8v4_k4v2/target_10_buffer_64/p0_q100/round_0/sample_indices_0.csv \
+        --log-path ../logs/per_token_thresh/qwq-32b/aime/k8v4_k4v2/buffer_64/p0_q3000/round_0/eval_0 \
+        --indices-csv ../logs/per_token_thresh/qwq-32b/aime/k8v4_k4v2/buffer_64/p0_q3000/round_0/sample_indices_0.csv \
         --data-label test

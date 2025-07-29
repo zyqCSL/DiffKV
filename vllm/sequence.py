@@ -241,6 +241,7 @@ class SequenceGroup:
         sampling_params: SamplingParams,
         arrival_time: float,
         quant_configs: List[int],
+        quant_groups: List[int],
         compress_configs: List[float],
     ) -> None:
         self.request_id = request_id
@@ -272,11 +273,14 @@ class SequenceGroup:
         
         # kv quantization configs
         assert len(quant_configs) == 2 or len(quant_configs) == 4
+        assert len(quant_configs) == len(quant_groups)
         self.quant_configs = tuple(quant_configs)
+        self.quant_groups = tuple(quant_groups)
         # pad the config if only 1 quant config is used
         if len(self.quant_configs) == 2:
             # self.quant_configs += [(0, 0)]
             self.quant_configs += self.quant_configs
+            self.quant_groups += self.quant_groups
             # assert _prune_thresh == _quant_thresh
             assert _prune_ratio == _quant_ratio
         else:
@@ -399,6 +403,10 @@ class SequenceGroupMetadata:
         num_bits_v_high: Optional[int],
         num_bits_k_low: Optional[int],
         num_bits_v_low: Optional[int],
+        num_chunks_k_high: Optional[int],
+        num_chunks_v_high: Optional[int],
+        num_chunks_k_low: Optional[int],
+        num_chunks_v_low: Optional[int],
     ) -> None:
         '''
         NOTE: block_tables & kv_lens should be set on the worker side
@@ -411,8 +419,13 @@ class SequenceGroupMetadata:
         # quant config
         self.num_bits_k_high = num_bits_k_high
         self.num_bits_v_high = num_bits_v_high
-        self.num_bits_k_low = num_bits_k_low
-        self.num_bits_v_low = num_bits_v_low
+        self.num_bits_k_low  = num_bits_k_low
+        self.num_bits_v_low  = num_bits_v_low
+        
+        self.num_chunks_k_high = num_chunks_k_high
+        self.num_chunks_v_high = num_chunks_v_high
+        self.num_chunks_k_low  = num_chunks_k_low
+        self.num_chunks_v_low  = num_chunks_v_low
 
 
 class SequenceOutput:

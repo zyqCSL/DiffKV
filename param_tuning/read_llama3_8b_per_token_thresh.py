@@ -2,10 +2,10 @@ import os
 import pandas as pd
 import numpy as np
 
-LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '/home/zhangyanqi/git_repos/DiffKV/logs')
-
 model_gen = 3
 model_size = 8
+
+LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '/home/zhangyanqi/git_repos/DiffKV/logs')
 
 workloads = [
     'gsm8k',

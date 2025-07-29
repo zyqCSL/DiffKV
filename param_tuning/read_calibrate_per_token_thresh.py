@@ -2,12 +2,12 @@ import os
 import pandas as pd
 import numpy as np
 
-LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '/home/zhangyanqi/git_repos/DiffKV/logs')
-
 model_name = 'qwen25-32b'
 # model_name = 'qwen25-7b'
 # model_name = 'llama3-8b'
 # model_name = 'qwq-32b'
+
+LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '/home/zhangyanqi/git_repos/DiffKV/logs')
 
 workloads = [
     # 'gsm8k',

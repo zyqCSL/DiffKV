@@ -16,10 +16,11 @@ from vllm.dataset import (
     AIMEDataset,
 )
 
-from util import maybe_destroy_process_group
+from util import maybe_destroy_process_group, get_quant_configs_and_groups
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 # NOTE: Maximum recursion depth exceeded in comparison
 # https://github.com/pltrdy/rouge/issues/19
@@ -30,12 +31,15 @@ np.random.seed(666)
 
 REQUEST_ID = 0
 
+
+
 # ------------ mbpp (code generation) tasks ------------#
 def add_math_questions(
     engine: LLMEngine,
     dataset: AIMEDataset,
     questions: List[AIMEQuestion],
     quant_configs: List[int],
+    quant_groups: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -46,6 +50,7 @@ def add_math_questions(
             prompt=prompt,
             sampling_params=SamplingParams,
             quant_configs=quant_configs, 
+            quant_groups=quant_groups,
             compress_configs=compress_configs,
         )
         dataset.register_request(question, str(REQUEST_ID))
@@ -101,13 +106,10 @@ def run_aime_dataset(
     # # for debug 
     # dataset.data_ptr = 287113
     
-    if kbits_high == kbits_low and vbits_high == vbits_low:
-        quant_configs = [kbits_high, vbits_high]
-    else:
-        quant_configs = [kbits_high, vbits_high, 
-                         kbits_low, vbits_low]
-    # compress_configs = [kv_prune_thresh, kv_quant_thresh, 
-    #                     kv_prune_ratio, kv_quant_ratio]
+    quant_configs, quant_groups = get_quant_configs_and_groups(
+        kbits_high, vbits_high, kbits_low, vbits_low,
+        cot=(prompt_type == 'qwq'))
+    # print(f'quant_configs = {quant_configs}, quant_groups = {quant_groups}')
     compress_configs = [kv_prune_thresh, kv_quant_thresh]
         
     # disable real-time perf logging
@@ -127,7 +129,7 @@ def run_aime_dataset(
         all_questions = all_questions[batch_size:]
         
         add_math_questions(
-            engine, dataset, questions, quant_configs, compress_configs)
+            engine, dataset, questions, quant_configs, quant_groups, compress_configs)
 
         while engine.has_unfinished_requests():
             request_outputs: List[RequestOutput] = engine.step()
@@ -174,7 +176,7 @@ def main(args: argparse.Namespace):
     #                     f'buffer_{engine.cache_config.kv_buffer_size}')
     
     prompt_type = ''
-    if 'QwQ' in args.model:
+    if 'QwQ' in args.model or 'Qwen3' in args.model:
         max_gen_len = 24 * 1024
         batch_size = min(64, batch_size)
         prompt_type = 'qwq'

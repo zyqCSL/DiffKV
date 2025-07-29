@@ -5,8 +5,8 @@ pandas  # Required for Ray data.
 pyarrow  # Required for Ray data.
 sentencepiece  # Required for LLaMA tokenizer.
 numpy
-torch == 2.6.0  # H20 GPU
-# nvidia-cublas-cu12 == 12.6.4.1 # H20 GPU
+torch == 2.6.0
+# nvidia-cublas-cu12 == 12.6.4.1
 transformers >= 4.51.0  # Required for Qwen3.
 # xformers == 0.0.23.post1  # Required for CUDA 12.1.
 evaluate==0.4.3

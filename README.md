@@ -25,11 +25,6 @@ DiffKV is built on top of vLLM (commit [1db83e3](https://github.com/vllm-project
 
 DiffKV supports model weight quantization using [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978), and FP8 formats.
 
-> **Note:**  
-> The `main` branch of DiffKV quantizes each token (typically with a hidden size of 128) using a **single** set of metadata (scale and zero point).  
-> The `group_quantization` branch introduces an enhanced version of DiffKV that supports quantizing each token with **multiple** sets of metadata, which is potentially more effective for GQA architectures with higher queries-per-KV ratios, as well as for long CoT (Chain-of-Thought) generation.
-
-
 
 ## Installation
 
@@ -100,7 +95,7 @@ To quickly verify the artifact setup:
     python read_small_models_results.py
     ```
    The summary will be saved in: `DiffKV/logs/per_token_thresh_compress_summary/`.
-   
+
 
 ## Quantization Configuration Guide
 
@@ -111,20 +106,24 @@ To add or modify quantization options, you must update several components in loc
 ### 1. `vllm/config.py::CacheConfig`
 
 - **Parameter:** `self.quantized_kv_bits`\
-  A list of supported quantization tuples `(kbits, vbits)`:
+  A list of supported quantization tuples `(kbits, vbits, n_kgroups, n_vgroups)`:
 
   ```python
   self.quantized_kv_bits = [
-      self.quantized_kv_bits = [
-          (8, 8),
-          (8, 4),
-          (8, 2),
-          (4, 4),
-          (4, 2),
-          (4, 1),
-      ]
+      (8, 8, 1, 1),
+      (8, 4, 1, 2),
+      (8, 4, 1, 1),
+      (8, 2, 1, 1),
+      (4, 4, 1, 1),
+      (4, 2, 2, 4),
+      (4, 2, 1, 1),
+      (4, 1, 1, 1),
   ]
   ```
+
+  - `n_kgroups` and `n_vgroups` specify how many subgroups each head (typically with a hidden size of 128) is split into for quantization metadata (scale & zero point).
+  - Up to **4 groups per token** are supported by the current CUDA kernels.
+  - By default, each token is quantized with a single group of metadata. Using **multiple** sets of metadata is potentially more effective for GQA architectures with high queries-per-KV ratios, as well as for long CoT (Chain-of-Thought) generation.
 
 - **Method:** `CacheConfig.compute_cache_block()`\
   Computes:
@@ -150,6 +149,7 @@ To add or modify quantization options, you must update several components in loc
    #define CALL_PROMPT_PHASE_CACHE_LAUNCHER_QUANT_CONFIG(T, HEAD_SIZE)               \
    if (quant_config == std::vector<int>{                                              \
        kbits_high, vbits_high, kbits_low, vbits_low,                                 \
+       n_kgroups_high, n_vgroups_high, n_kgroups_low, n_vgroups_low                   \
    }) {                                                                                \
        assert(num_tokens_per_page_high == <computed_high>);                           \
        assert(num_tokens_per_page_low  == <computed_low>);                            \
@@ -157,6 +157,8 @@ To add or modify quantization options, you must update several components in loc
        LAUNCH_CACHE_KERNEL_PROMPT_PHASE(                                              \
            T, HEAD_SIZE,
            kbits_high, vbits_high, kbits_low, vbits_low,
+           n_kgroups_high, n_vgroups_high,
+           n_kgroups_low, n_vgroups_low,
            num_tokens_per_page_high,
            num_tokens_per_page_low,
            thread_group_size_v
@@ -192,6 +194,7 @@ To add or modify quantization options, you must update several components in loc
   #define CALL_LAUNCHER_QUANT_CONFIG(T)                                      \
   if (quant_config == std::vector<int>{                                       \
       kbits_high, vbits_high, kbits_low, vbits_low,                          \
+      n_kgroups_high, n_vgroups_high, n_kgroups_low, n_vgroups_low             \
   }) {                                                                        \
       assert(num_tokens_per_page_high == <computed_high>);                     \
       assert(num_tokens_per_page_low  == <computed_low>);                      \
@@ -199,6 +202,8 @@ To add or modify quantization options, you must update several components in loc
       CALL_LAUNCHER(
           T,
           kbits_high, vbits_high, kbits_low, vbits_low,
+          n_kgroups_high, n_vgroups_high,
+          n_kgroups_low, n_vgroups_low,
           num_tokens_per_page_high,
           num_tokens_per_page_low,
           thread_group_size_v
@@ -208,8 +213,32 @@ To add or modify quantization options, you must update several components in loc
 
 ---
 
-Keep all components synchronized. Any mismatch between code, assertions, and computed values will cause runtime errors.
+### 5. Benchmark Utilities: `param_tuning/util/util.py`
 
+- **Mapping:** Update `BITS_TO_QUANT_GROUPS` to reflect new bit-to-group mappings:
+
+  ```python
+  BITS_TO_QUANT_GROUPS = {
+      8: 1,
+      4: 2,
+      2: 4,
+      # add new_bit: group_count,
+  }
+  ```
+
+- `` assumes a single group when `kbits == vbits`:
+
+  ```python
+  if kbits_high == vbits_high:
+      # baseline: one group for both key & value
+      quant_groups = [1, 1]
+  ```
+
+  Adjust this logic if your design requires different behavior.
+
+---
+
+Keep all components synchronized. Any mismatch between code, assertions, and computed values will cause runtime errors.
 
 
 ## Citation

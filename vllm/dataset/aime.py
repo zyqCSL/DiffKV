@@ -31,7 +31,7 @@ def process_results(ground_truth, results: List[str]) -> bool:
     except Exception as e:
         print(f"Exception: {e}")
         mathval = False
-        
+    
     # print(f"*********** gt_answer:{ground_truth} | result:{answer}, correct = {mathval} ***********")
 
     return mathval

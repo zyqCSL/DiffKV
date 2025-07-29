@@ -254,7 +254,12 @@ class Worker:
                 metadata.num_bits_k_high, 
                 metadata.num_bits_v_high,
                 metadata.num_bits_k_low,
-                metadata.num_bits_v_low)
+                metadata.num_bits_v_low,
+                metadata.num_chunks_k_high,
+                metadata.num_chunks_v_high,
+                metadata.num_chunks_k_low,
+                metadata.num_chunks_v_low,
+                )
         
         # print(f'DEBUG: block_manager.start_block_pos = {self.block_manager.gpu_allocator.start_block_pos}, '
         #       f'end_block_pos = {self.block_manager.gpu_allocator.end_block_pos}')
@@ -273,6 +278,10 @@ class Worker:
         vbits_high: int,
         kbits_low: int,
         vbits_low: int,
+        kgroups_high: int,
+        vgroups_high: int,
+        kgroups_low: int,
+        vgroups_low: int,
         compress_config: List[float],
     ) -> None:
         self.block_manager.allocate(
@@ -282,6 +291,10 @@ class Worker:
             vbits_high=vbits_high,
             kbits_low=kbits_low,
             vbits_low=vbits_low,
+            kgroups_high=kgroups_high,
+            vgroups_high=vgroups_high,
+            kgroups_low=kgroups_low,
+            vgroups_low=vgroups_low,
             batch_compress_configs=[compress_config])
         
     def allocate_batch_seqs(
@@ -292,6 +305,10 @@ class Worker:
         vbits_high: int,
         kbits_low: int,
         vbits_low: int,
+        kgroups_high: int,
+        vgroups_high: int,
+        kgroups_low: int,
+        vgroups_low: int,
         batch_compress_configs: List[List[float]],
     ) -> None:
         ''' Allocate the scheduled batch in one pass '''
@@ -302,6 +319,10 @@ class Worker:
             vbits_high,
             kbits_low,
             vbits_low, 
+            kgroups_high,
+            vgroups_high,
+            kgroups_low,
+            vgroups_low,
             batch_compress_configs)
     
     def append_slot_to_seqs(
@@ -310,9 +331,15 @@ class Worker:
         kbits_high: int,
         vbits_high: int,
         kbits_low: int,
-        vbits_low: int) -> bool:
+        vbits_low: int,
+        kgroups_high: int,
+        vgroups_high: int,
+        kgroups_low: int,
+        vgroups_low: int) -> bool:
         return self.block_manager.append_slot(
-            seq_ids, kbits_high, vbits_high, kbits_low, vbits_low)
+            seq_ids, 
+            kbits_high, vbits_high, kbits_low, vbits_low,
+            kgroups_high, vgroups_high, kgroups_low, vgroups_low)
     
     def free_seq(self, seq_id: int, is_finished: bool) -> int:
         # TODO: update kv_len stats here

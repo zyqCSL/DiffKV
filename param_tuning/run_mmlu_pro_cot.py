@@ -16,7 +16,7 @@ from vllm.dataset import (
     MMLUProCoTDataset,
 )
 
-from util import maybe_destroy_process_group
+from util import maybe_destroy_process_group, get_quant_configs_and_groups
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -36,6 +36,7 @@ def add_mmlu_pro_cot_questions(
     dataset: MMLUProCoTDataset,
     questions: List[MMLUProCoTQuestion],
     quant_configs: List[int],
+    quant_groups: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -46,6 +47,7 @@ def add_mmlu_pro_cot_questions(
             prompt=prompt,
             sampling_params=SamplingParams,
             quant_configs=quant_configs, 
+            quant_groups=quant_groups, 
             compress_configs=compress_configs,
         )
         dataset.register_request(question, str(REQUEST_ID))
@@ -81,8 +83,6 @@ def run_mmlu_pro_cot_dataset(
     vbits_low: int,
     kv_prune_thresh: float,
     kv_quant_thresh: float,
-    # kv_prune_ratio: float,
-    # kv_quant_ratio: float,
     quiet: bool = True,
 ) -> None:
     ''' Args
@@ -93,14 +93,10 @@ def run_mmlu_pro_cot_dataset(
     print('total_questions = ', total_questions)
 
     
-    if kbits_high == kbits_low and vbits_high == vbits_low:
-        quant_configs = [kbits_high, vbits_high]
-    else:
-        quant_configs = [kbits_high, vbits_high, 
-                         kbits_low, vbits_low]
-    # compress_configs = [kv_prune_thresh, kv_quant_thresh, 
-    #                     kv_prune_ratio, kv_quant_ratio]
+    quant_configs, quant_groups = get_quant_configs_and_groups(
+        kbits_high, vbits_high, kbits_low, vbits_low)
     compress_configs = [kv_prune_thresh, kv_quant_thresh]
+    
     # disable real-time perf logging
     engine.log_stats = not quiet
     
@@ -117,7 +113,7 @@ def run_mmlu_pro_cot_dataset(
         all_questions = all_questions[batch_size:]
         
         add_mmlu_pro_cot_questions(
-            engine, dataset, questions, quant_configs, compress_configs)
+            engine, dataset, questions, quant_configs, quant_groups, compress_configs)
 
         while engine.has_unfinished_requests():
             request_outputs: List[RequestOutput] = engine.step()
@@ -164,7 +160,7 @@ def main(args: argparse.Namespace):
         engine=engine, 
         batch_size=batch_size * 5, 
         indices=indices, 
-        log_path=args.log_path,
+        log_path=args.log_path, 
         sample_rate=args.sample_rate, 
         kbits_high=args.kbits_high,
         vbits_high=args.vbits_high,

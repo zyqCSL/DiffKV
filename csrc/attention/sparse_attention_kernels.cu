@@ -115,6 +115,10 @@ template<
   int BITS_V_HIGH,
   int BITS_K_LOW,
   int BITS_V_LOW,
+  int CHUNKS_K_HIGH,
+  int CHUNKS_V_HIGH,
+  int CHUNKS_K_LOW,
+  int CHUNKS_V_LOW,
   int NUM_TOKENS_PER_PAGE_HIGH,
   int NUM_TOKENS_PER_PAGE_LOW,
   int THREAD_GROUP_SIZE_V,
@@ -172,6 +176,11 @@ __device__ void sparse_paged_attention_kernel(
   // assert(NUM_ELEMS_PER_THREAD % K_PACK_SIZE_HIGH == 0);
   // assert(NUM_ELEMS_PER_THREAD % K_PACK_SIZE_LOW == 0);
 
+  static_assert(HEAD_SIZE % K_PACK_SIZE_HIGH == 0);
+  static_assert(HEAD_SIZE % V_PACK_SIZE_HIGH == 0);
+  static_assert(HEAD_SIZE % K_PACK_SIZE_LOW == 0);
+  static_assert(HEAD_SIZE % V_PACK_SIZE_LOW == 0);
+
   constexpr int NUM_K_PACKS_HIGH = HEAD_SIZE / K_PACK_SIZE_HIGH;
   constexpr int NUM_V_PACKS_HIGH = HEAD_SIZE / V_PACK_SIZE_HIGH;
   constexpr int NUM_K_PACKS_LOW = HEAD_SIZE / K_PACK_SIZE_LOW;
@@ -180,18 +189,20 @@ __device__ void sparse_paged_attention_kernel(
   // Align the starting address of each segment (key, key meta, val, val meta, score, pos) to 32 bytes.
   constexpr int KEY_BASE_HIGH = 0;
   constexpr int KEY_META_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * NUM_K_PACKS_HIGH * 2, 32) * 32 / sizeof(uint16_t) + KEY_BASE_HIGH;
-  constexpr int VAL_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4 + KEY_META_BASE_HIGH * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
+  constexpr int VAL_BASE_HIGH = DIVIDE_ROUND_UP(
+    NUM_TOKENS_PER_PAGE_HIGH * CHUNKS_K_HIGH * 4 + KEY_META_BASE_HIGH * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
   constexpr int PADDED_NUM_TOKENS_PER_PAGE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH, V_VEC_SIZE) * V_VEC_SIZE;
   constexpr int VAL_META_BASE_HIGH = DIVIDE_ROUND_UP(PADDED_NUM_TOKENS_PER_PAGE_HIGH * NUM_V_PACKS_HIGH * 2, 32) * 32 / sizeof(uint16_t) + VAL_BASE_HIGH;
-  // constexpr int SCORE_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_HIGH;
+  // constexpr int SCORE_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * CHUNKS_V_HIGH * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_HIGH;
   // constexpr int POS_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4, 32) * 32 / sizeof(uint16_t) + SCORE_BASE_HIGH;
 
   constexpr int KEY_BASE_LOW = 0;
   constexpr int KEY_META_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * NUM_K_PACKS_LOW * 2, 32) * 32 / sizeof(uint16_t) + KEY_BASE_LOW;
-  constexpr int VAL_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4 + KEY_META_BASE_LOW * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
+  constexpr int VAL_BASE_LOW = DIVIDE_ROUND_UP(
+    NUM_TOKENS_PER_PAGE_LOW * CHUNKS_K_LOW * 4 + KEY_META_BASE_LOW * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
   constexpr int PADDED_NUM_TOKENS_PER_PAGE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW, V_VEC_SIZE) * V_VEC_SIZE;
   constexpr int VAL_META_BASE_LOW = DIVIDE_ROUND_UP(PADDED_NUM_TOKENS_PER_PAGE_LOW * NUM_V_PACKS_LOW * 2, 32) * 32 / sizeof(uint16_t) + VAL_BASE_LOW;
-  // constexpr int SCORE_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_LOW;
+  // constexpr int SCORE_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * CHUNKS_V_LOW * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_LOW;
   // constexpr int POS_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4, 32) * 32 / sizeof(uint16_t) + SCORE_BASE_LOW;
 
   const int num_pages_high = DIVIDE_ROUND_UP(context_len_left, NUM_TOKENS_PER_PAGE_HIGH);
@@ -257,12 +268,30 @@ __device__ void sparse_paged_attention_kernel(
   constexpr int NUM_PACKS_PER_THREAD_K_LOW = NUM_ELEMS_PER_THREAD / K_PACK_SIZE_LOW;
   constexpr int NUM_VECS_PER_THREAD_K_LOW = NUM_PACKS_PER_THREAD_K_LOW / K_VEC_SIZE;
 
+  // layout of keys within a unified page:
+  // [NUM_PACKS/K_VEC_SIZE/THREAD_GROUP_SIZE_K, NUM_TOKENS_PER_PAGE, THREAD_GROUP_SIZE_K, K_VEC_SIZE]
   // the 1st dimension key's layout
-  assert(NUM_K_PACKS_HIGH % (K_VEC_SIZE * THREAD_GROUP_SIZE_K) == 0);
-  assert(NUM_K_PACKS_LOW % (K_VEC_SIZE * THREAD_GROUP_SIZE_K) == 0);
+  static_assert(NUM_K_PACKS_HIGH % (K_VEC_SIZE * THREAD_GROUP_SIZE_K) == 0);
+  static_assert(NUM_K_PACKS_LOW % (K_VEC_SIZE * THREAD_GROUP_SIZE_K) == 0);
+
+  // make sure that each key vec only corresponds to one group of metadata
+  static_assert(NUM_K_PACKS_HIGH % (K_VEC_SIZE * CHUNKS_K_HIGH) == 0);
+  static_assert(NUM_K_PACKS_LOW % (K_VEC_SIZE * CHUNKS_K_LOW) == 0);
+
+  constexpr int NUM_VECS_PER_META_K_HIGH = NUM_K_PACKS_HIGH / K_VEC_SIZE / CHUNKS_K_HIGH;
+  constexpr int NUM_VECS_PER_META_K_LOW = NUM_K_PACKS_LOW / K_VEC_SIZE / CHUNKS_K_HIGH;
+
+  // NOTE: make sure each thread in a key thread group just needs to fetch one group of metadata
+  static_assert(THREAD_GROUP_SIZE_K % CHUNKS_K_HIGH == 0);
+  static_assert(THREAD_GROUP_SIZE_K % CHUNKS_K_LOW == 0);
 
   const int thread_group_idx_k = lane % NUM_THREAD_GROUPS_K;
   const int thread_group_offset_k = lane / NUM_THREAD_GROUPS_K;
+
+  const int key_chunk_idx_high = thread_group_offset_k / (THREAD_GROUP_SIZE_K / CHUNKS_K_HIGH);
+  const int key_chunk_idx_low = thread_group_offset_k / (THREAD_GROUP_SIZE_K / CHUNKS_K_LOW);
+  assert(key_chunk_idx_high < CHUNKS_K_HIGH);
+  assert(key_chunk_idx_low < CHUNKS_K_LOW);
 
   // const int thread_group_idx_k = lane / THREAD_GROUP_SIZE_K;
   // const int thread_group_offset_k = lane % THREAD_GROUP_SIZE_K;
@@ -324,7 +353,8 @@ __device__ void sparse_paged_attention_kernel(
       if (token_idx_within_the_page < NUM_TOKENS_PER_PAGE_HIGH && token_idx < context_len_left) {
         // TOOD: Each thread in a thread group needs to load k_quant_scale and k_quant_zero_point.
         //       The group size is typically 2. Can we optimize it?
-        quant_meta_type k_quant_meta = *reinterpret_cast<quant_meta_type*>(&kv_cache[k_meta_offset + token_idx_within_the_page * 2]);
+        quant_meta_type k_quant_meta = *reinterpret_cast<quant_meta_type*>(
+          &kv_cache[k_meta_offset + (token_idx_within_the_page * CHUNKS_K_HIGH + key_chunk_idx_high) * 2]);
         const float k_quant_scale = to_float(k_quant_meta.scale);
         const float k_quant_zero_point = to_float(k_quant_meta.zero_point);
 
@@ -384,7 +414,8 @@ __device__ void sparse_paged_attention_kernel(
       const int token_idx = context_len_left + context_block_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page;
 
       if (token_idx_within_the_page < NUM_TOKENS_PER_PAGE_LOW && token_idx < context_len) {
-        quant_meta_type k_quant_meta = *reinterpret_cast<quant_meta_type*>(&kv_cache[k_meta_offset + token_idx_within_the_page * 2]);
+        quant_meta_type k_quant_meta = *reinterpret_cast<quant_meta_type*>(
+          &kv_cache[k_meta_offset + (token_idx_within_the_page * CHUNKS_K_LOW + key_chunk_idx_low) * 2]);
         const float k_quant_scale = to_float(k_quant_meta.scale);
         const float k_quant_zero_point = to_float(k_quant_meta.zero_point);
 
@@ -513,8 +544,17 @@ __device__ void sparse_paged_attention_kernel(
   constexpr int NUM_TOKEN_VECS_PER_THREAD_GROUP_HIGH = DIVIDE_ROUND_UP(NUM_VECS_HIGH, NUM_THREAD_GROUPS_V);
   constexpr int NUM_TOKEN_VECS_PER_THREAD_GROUP_LOW = DIVIDE_ROUND_UP(NUM_VECS_LOW, NUM_THREAD_GROUPS_V);
 
+  // NOTE: make sure each thread just needs to fetch one tuple of metadata for a token
+  static_assert(THREAD_GROUP_SIZE_V % CHUNKS_V_HIGH == 0);
+  static_assert(THREAD_GROUP_SIZE_V % CHUNKS_V_LOW == 0);
+
   const int thread_group_idx_v = lane / THREAD_GROUP_SIZE_V;
   const int thread_group_offset_v = lane % THREAD_GROUP_SIZE_V;
+
+  const int value_chunk_idx_high = thread_group_offset_v / (THREAD_GROUP_SIZE_V / CHUNKS_V_HIGH);
+  const int value_chunk_idx_low = thread_group_offset_v / (THREAD_GROUP_SIZE_V / CHUNKS_V_LOW);
+  assert(value_chunk_idx_high < CHUNKS_V_HIGH);
+  assert(value_chunk_idx_low < CHUNKS_V_LOW);
 
   // NOTE: the following config is slower
   // const int thread_group_idx_v = lane % THREAD_GROUP_SIZE_V;
@@ -533,7 +573,8 @@ __device__ void sparse_paged_attention_kernel(
   // Workspace for quantization metadata.
   // Note: loading and accessing quantization metadata incurs less than 0.05 ms overhead, which is small.
   // constexpr int QUANT_META_SIZE = NUM_THREAD_GROUPS_V * MAX(NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW);
-  constexpr int QUANT_META_SIZE = NUM_WARPS * MAX(NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW);
+  constexpr int QUANT_META_SIZE = NUM_WARPS * MAX(NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW) * 
+                                  MAX(CHUNKS_V_HIGH, CHUNKS_V_LOW);
   __shared__ quant_meta_type v_quant_meta[QUANT_META_SIZE];
 
   // Create cooperative groups for sub-warp synchronization
@@ -552,8 +593,13 @@ __device__ void sparse_paged_attention_kernel(
     for (int i = 0; i < DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH, WARP_SIZE); i++) {
       const int token_idx_within_the_page = i * WARP_SIZE + lane;
       if (token_idx_within_the_page < NUM_TOKENS_PER_PAGE_HIGH) {
-        v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page] =
-          *reinterpret_cast<quant_meta_type*>(&kv_cache[v_meta_offset + token_idx_within_the_page * 2]);
+        #pragma unroll
+        for (int j = 0; j < CHUNKS_V_HIGH; j++) {
+          v_quant_meta[(warp_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page) * CHUNKS_V_HIGH + j] =
+            *reinterpret_cast<quant_meta_type*>(&kv_cache[v_meta_offset + (token_idx_within_the_page * CHUNKS_V_HIGH + j) * 2]);
+        }
+        // v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page] =
+        //   *reinterpret_cast<quant_meta_type*>(&kv_cache[v_meta_offset + token_idx_within_the_page * 2]);
       }
     }
     // NOTE: __syncthreads() or __syncwarp() would cause deadlock, because some thread groups never enter the for loop.
@@ -577,8 +623,9 @@ __device__ void sparse_paged_attention_kernel(
         for (int i = 0; i < V_VEC_SIZE; i++) {
           const int token_idx_within_the_page = vec_idx * V_VEC_SIZE + i;
           const int token_idx = context_block_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page;
-          // const quant_meta_type meta = v_quant_meta[thread_group_idx_v * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page];
-          const quant_meta_type meta = v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page];
+          // const quant_meta_type meta = v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page];
+          const quant_meta_type meta = v_quant_meta[
+            (warp_idx * NUM_TOKENS_PER_PAGE_HIGH + token_idx_within_the_page) * CHUNKS_V_HIGH + value_chunk_idx_high];
           unpack_and_dequant(v_vec.data[i],
                              BITS_V_HIGH,
                              to_float(meta.scale),
@@ -607,8 +654,13 @@ __device__ void sparse_paged_attention_kernel(
     for (int i = 0; i < DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW, WARP_SIZE); i++) {
       const int token_idx_within_the_page = i * WARP_SIZE + lane;
       if (token_idx_within_the_page < NUM_TOKENS_PER_PAGE_LOW) {
-        v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page] =
-          *reinterpret_cast<quant_meta_type*>(&kv_cache[v_meta_offset + token_idx_within_the_page * 2]);
+        #pragma unroll
+        for (int j = 0; j < CHUNKS_V_LOW; j++) {
+          v_quant_meta[(warp_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page) * CHUNKS_V_LOW + j] =
+            *reinterpret_cast<quant_meta_type*>(&kv_cache[v_meta_offset + (token_idx_within_the_page * CHUNKS_V_LOW + j) * 2]);
+        }
+        // v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page] =
+        //   *reinterpret_cast<quant_meta_type*>(&kv_cache[v_meta_offset + token_idx_within_the_page * 2]);
       }
     }
     // group.sync();
@@ -631,8 +683,9 @@ __device__ void sparse_paged_attention_kernel(
         for (int i = 0; i < V_VEC_SIZE; i++) {
           const int token_idx_within_the_page = vec_idx * V_VEC_SIZE + i;
           const int token_idx = context_block_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page;
-          // const quant_meta_type meta = v_quant_meta[thread_group_idx_v * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page];
-          const quant_meta_type meta = v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page];
+          // const quant_meta_type meta = v_quant_meta[warp_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page];
+          const quant_meta_type meta = v_quant_meta[
+            (warp_idx * NUM_TOKENS_PER_PAGE_LOW + token_idx_within_the_page) * CHUNKS_V_LOW + value_chunk_idx_low];
           unpack_and_dequant(v_vec.data[i],
                              BITS_V_LOW,
                              to_float(meta.scale),
@@ -713,6 +766,10 @@ template<
   int BITS_V_HIGH,
   int BITS_K_LOW,
   int BITS_V_LOW,
+  int CHUNKS_K_HIGH,
+  int CHUNKS_V_HIGH,
+  int CHUNKS_K_LOW,
+  int CHUNKS_V_LOW,
   int NUM_TOKENS_PER_PAGE_HIGH,
   int NUM_TOKENS_PER_PAGE_LOW,
   int PARTITION_SIZE>
@@ -750,19 +807,40 @@ __global__ void reduce_kernel(
   constexpr int NUM_K_PACKS_LOW = HEAD_SIZE / K_PACK_SIZE_LOW;
   constexpr int NUM_V_PACKS_LOW = HEAD_SIZE / V_PACK_SIZE_LOW;
 
+  // Align the starting address of each segment (key, key meta, val, val meta, score, pos) to 32 bytes.
   constexpr int KEY_BASE_HIGH = 0;
   constexpr int KEY_META_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * NUM_K_PACKS_HIGH * 2, 32) * 32 / sizeof(uint16_t) + KEY_BASE_HIGH;
-  constexpr int VAL_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4 + KEY_META_BASE_HIGH * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
+  constexpr int VAL_BASE_HIGH = DIVIDE_ROUND_UP(
+    NUM_TOKENS_PER_PAGE_HIGH * CHUNKS_K_HIGH * 4 + KEY_META_BASE_HIGH * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
   constexpr int PADDED_NUM_TOKENS_PER_PAGE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH, V_VEC_SIZE) * V_VEC_SIZE;
   constexpr int VAL_META_BASE_HIGH = DIVIDE_ROUND_UP(PADDED_NUM_TOKENS_PER_PAGE_HIGH * NUM_V_PACKS_HIGH * 2, 32) * 32 / sizeof(uint16_t) + VAL_BASE_HIGH;
-  constexpr int SCORE_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_HIGH;
+  constexpr int SCORE_BASE_HIGH = DIVIDE_ROUND_UP(
+    NUM_TOKENS_PER_PAGE_HIGH * CHUNKS_V_HIGH * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_HIGH;
+  constexpr int POS_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4, 32) * 32 / sizeof(uint16_t) + SCORE_BASE_HIGH;
 
   constexpr int KEY_BASE_LOW = 0;
   constexpr int KEY_META_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * NUM_K_PACKS_LOW * 2, 32) * 32 / sizeof(uint16_t) + KEY_BASE_LOW;
-  constexpr int VAL_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4 + KEY_META_BASE_LOW * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
+  constexpr int VAL_BASE_LOW = DIVIDE_ROUND_UP(
+    NUM_TOKENS_PER_PAGE_LOW * CHUNKS_K_LOW * 4 + KEY_META_BASE_LOW * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
   constexpr int PADDED_NUM_TOKENS_PER_PAGE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW, V_VEC_SIZE) * V_VEC_SIZE;
   constexpr int VAL_META_BASE_LOW = DIVIDE_ROUND_UP(PADDED_NUM_TOKENS_PER_PAGE_LOW * NUM_V_PACKS_LOW * 2, 32) * 32 / sizeof(uint16_t) + VAL_BASE_LOW;
-  constexpr int SCORE_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_LOW;
+  constexpr int SCORE_BASE_LOW = DIVIDE_ROUND_UP(
+    NUM_TOKENS_PER_PAGE_LOW * CHUNKS_V_LOW * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_LOW;
+  constexpr int POS_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4, 32) * 32 / sizeof(uint16_t) + SCORE_BASE_LOW;
+
+  // constexpr int KEY_BASE_HIGH = 0;
+  // constexpr int KEY_META_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * NUM_K_PACKS_HIGH * 2, 32) * 32 / sizeof(uint16_t) + KEY_BASE_HIGH;
+  // constexpr int VAL_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4 + KEY_META_BASE_HIGH * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
+  // constexpr int PADDED_NUM_TOKENS_PER_PAGE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH, V_VEC_SIZE) * V_VEC_SIZE;
+  // constexpr int VAL_META_BASE_HIGH = DIVIDE_ROUND_UP(PADDED_NUM_TOKENS_PER_PAGE_HIGH * NUM_V_PACKS_HIGH * 2, 32) * 32 / sizeof(uint16_t) + VAL_BASE_HIGH;
+  // constexpr int SCORE_BASE_HIGH = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_HIGH * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_HIGH;
+
+  // constexpr int KEY_BASE_LOW = 0;
+  // constexpr int KEY_META_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * NUM_K_PACKS_LOW * 2, 32) * 32 / sizeof(uint16_t) + KEY_BASE_LOW;
+  // constexpr int VAL_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4 + KEY_META_BASE_LOW * sizeof(uint16_t), 128) * 128 / sizeof(uint16_t);
+  // constexpr int PADDED_NUM_TOKENS_PER_PAGE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW, V_VEC_SIZE) * V_VEC_SIZE;
+  // constexpr int VAL_META_BASE_LOW = DIVIDE_ROUND_UP(PADDED_NUM_TOKENS_PER_PAGE_LOW * NUM_V_PACKS_LOW * 2, 32) * 32 / sizeof(uint16_t) + VAL_BASE_LOW;
+  // constexpr int SCORE_BASE_LOW = DIVIDE_ROUND_UP(NUM_TOKENS_PER_PAGE_LOW * 4, 32) * 32 / sizeof(uint16_t) + VAL_META_BASE_LOW;
 
   const int* block_table_left = block_tables +
                                 (slot_idx * num_layers * num_kv_heads +
@@ -964,6 +1042,10 @@ template<
   int BITS_V_HIGH,
   int BITS_K_LOW,
   int BITS_V_LOW,
+  int CHUNKS_K_HIGH,
+  int CHUNKS_V_HIGH,
+  int CHUNKS_K_LOW,
+  int CHUNKS_V_LOW,
   int NUM_TOKENS_PER_PAGE_HIGH,
   int NUM_TOKENS_PER_PAGE_LOW,
   int THREAD_GROUP_SIZE_V,
@@ -988,7 +1070,9 @@ __global__ void sparse_paged_attention_wrapper(
   const float* __restrict__ alibi_slopes,   // [num_heads]
   const int q_stride,
   const int unified_page_size) {
-  sparse_paged_attention_kernel<scalar_t, HEAD_SIZE, NUM_QUERIES_PER_KV, BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,
+  sparse_paged_attention_kernel<scalar_t, HEAD_SIZE, NUM_QUERIES_PER_KV, 
+                                BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,
+                                CHUNKS_K_HIGH, CHUNKS_V_HIGH, CHUNKS_K_LOW, CHUNKS_V_LOW,
                                 NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW, THREAD_GROUP_SIZE_V, PARTITION_SIZE>(
     slot_ids, positions, exp_sums, max_logits, tmp_out, tmp_scores,
     q, kv_cache, layer_idx, num_layers, num_kv_heads, scale,
@@ -1001,13 +1085,17 @@ __global__ void sparse_paged_attention_wrapper(
 
 #define LAUNCH_SPARSE_PAGED_ATTENTION(HEAD_SIZE, NUM_QUERIES_PER_KV)                                             \
   VLLM_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(                                                          \
-    ((void*)vllm::sparse_paged_attention_wrapper<T, HEAD_SIZE, NUM_QUERIES_PER_KV, BITS_K_HIGH, BITS_V_HIGH,     \
-                                                 BITS_K_LOW, BITS_V_LOW, NUM_TOKENS_PER_PAGE_HIGH,               \
-                                                 NUM_TOKENS_PER_PAGE_LOW, THREAD_GROUP_SIZE_V, PARTITION_SIZE>), \
+    ((void*)vllm::sparse_paged_attention_wrapper<T, HEAD_SIZE, NUM_QUERIES_PER_KV,                               \
+                                                 BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,               \
+                                                 CHUNKS_K_HIGH, CHUNKS_V_HIGH, CHUNKS_K_LOW, CHUNKS_V_LOW,           \
+                                                 NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW,              \
+                                                 THREAD_GROUP_SIZE_V, PARTITION_SIZE>),                          \
     shared_mem_size);                                                                                            \
-  vllm::sparse_paged_attention_wrapper<T, HEAD_SIZE, NUM_QUERIES_PER_KV, BITS_K_HIGH, BITS_V_HIGH,               \
-                                       BITS_K_LOW, BITS_V_LOW, NUM_TOKENS_PER_PAGE_HIGH,                         \
-                                       NUM_TOKENS_PER_PAGE_LOW, THREAD_GROUP_SIZE_V, PARTITION_SIZE>             \
+  vllm::sparse_paged_attention_wrapper<T, HEAD_SIZE, NUM_QUERIES_PER_KV,                                         \
+                                       BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,                         \
+                                       CHUNKS_K_HIGH, CHUNKS_V_HIGH, CHUNKS_K_LOW, CHUNKS_V_LOW,                     \
+                                       NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW,                        \
+                                       THREAD_GROUP_SIZE_V, PARTITION_SIZE>                                      \
   <<<grid, block, shared_mem_size, stream>>>(                                                  \
      slot_ids_ptr,                                                                             \
      positions_ptr,                                                                            \
@@ -1028,9 +1116,10 @@ __global__ void sparse_paged_attention_wrapper(
      alibi_slopes_ptr,                                                                         \
      q_stride,                                                                                 \
      unified_page_size);                                                                       \
-  vllm::reduce_kernel<T, HEAD_SIZE, NUM_QUERIES_PER_KV, BITS_K_HIGH, BITS_V_HIGH,              \
-                      BITS_K_LOW, BITS_V_LOW, NUM_TOKENS_PER_PAGE_HIGH,                        \
-                      NUM_TOKENS_PER_PAGE_LOW, PARTITION_SIZE>                                 \
+  vllm::reduce_kernel<T, HEAD_SIZE, NUM_QUERIES_PER_KV,                                        \
+                      BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,                        \
+                      CHUNKS_K_HIGH, CHUNKS_V_HIGH, CHUNKS_K_LOW, CHUNKS_V_LOW,                    \
+                      NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW, PARTITION_SIZE>       \
   <<<reduce_grid, block, reduce_shared_mem_size, stream>>>(                                    \
     out_ptr,                                                                                   \
     exp_sums_ptr,                                                                              \
@@ -1056,6 +1145,10 @@ template<
   int BITS_V_HIGH,
   int BITS_K_LOW,
   int BITS_V_LOW,
+  int CHUNKS_K_HIGH,
+  int CHUNKS_V_HIGH,
+  int CHUNKS_K_LOW,
+  int CHUNKS_V_LOW,
   int NUM_TOKENS_PER_PAGE_HIGH,
   int NUM_TOKENS_PER_PAGE_LOW,
   int THREAD_GROUP_SIZE_V>
@@ -1214,8 +1307,10 @@ void sparse_paged_attention_launcher(
 }
 
 #define CALL_LAUNCHER(T, BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,                               \
+                      CHUNKS_K_HIGH, CHUNKS_V_HIGH, CHUNKS_K_LOW, CHUNKS_V_LOW,                              \
                       NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW, THREAD_GROUP_SIZE_V)            \
   sparse_paged_attention_launcher<T, BITS_K_HIGH, BITS_V_HIGH, BITS_K_LOW, BITS_V_LOW,                      \
+                                  CHUNKS_K_HIGH, CHUNKS_V_HIGH, CHUNKS_K_LOW, CHUNKS_V_LOW,                     \
                                   NUM_TOKENS_PER_PAGE_HIGH, NUM_TOKENS_PER_PAGE_LOW, THREAD_GROUP_SIZE_V>(  \
     slot_ids,                                                   \
     positions,                                                  \
@@ -1234,59 +1329,59 @@ void sparse_paged_attention_launcher(
     max_context_len,                                            \
     alibi_slopes);
 
-#define CALL_LAUNCHER_QUANT_CONFIG(T)                          \
-  if (quant_config == std::vector<int>{8, 8, 8, 8}) {          \
-    assert(num_tokens_per_page_high == 12);                    \
-    assert(num_tokens_per_page_low == 12);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 8, 8, 8, 8, 12, 12, 8);                   \
-  } else if (quant_config == std::vector<int>{8, 4, 8, 4}) {   \
-    assert(num_tokens_per_page_high == 16);                    \
-    assert(num_tokens_per_page_low == 16);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 8, 4, 8, 4, 16, 16, 8);                   \
-  } else if (quant_config == std::vector<int>{8, 4, 8, 2}) {   \
-    assert(num_tokens_per_page_high == 16);                    \
-    assert(num_tokens_per_page_low == 19);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 8, 4, 8, 2, 16, 19, 8);                   \
-  } else if (quant_config == std::vector<int>{8, 4, 4, 4}) {   \
-    assert(num_tokens_per_page_high == 16);                    \
-    assert(num_tokens_per_page_low == 22);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 8, 4, 4, 4, 16, 22, 8);                   \
-  } else if (quant_config == std::vector<int>{8, 4, 4, 2}) {   \
-    assert(num_tokens_per_page_high == 16);                    \
-    assert(num_tokens_per_page_low == 30);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 8, 4, 4, 2, 16, 30, 8);                   \
-  } else if (quant_config == std::vector<int>{4, 4, 4, 4}) {   \
-    assert(num_tokens_per_page_high == 22);                    \
-    assert(num_tokens_per_page_low == 22);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 4, 4, 4, 4, 22, 22, 8);                   \
-  } else if (quant_config == std::vector<int>{4, 4, 4, 2}) {   \
-    assert(num_tokens_per_page_high == 22);                    \
-    assert(num_tokens_per_page_low == 30);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 4, 4, 4, 2, 22, 30, 8);                   \
-  } else if (quant_config == std::vector<int>{4, 2, 4, 2}) {   \
-    assert(num_tokens_per_page_high == 30);                    \
-    assert(num_tokens_per_page_low == 30);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 4, 2, 4, 2, 30, 30, 8);                   \
-  } else if (quant_config == std::vector<int>{4, 2, 4, 1}) {   \
-    assert(num_tokens_per_page_high == 30);                    \
-    assert(num_tokens_per_page_low == 35);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 4, 2, 4, 1, 30, 35, 8);                   \
-  } else if (quant_config == std::vector<int>{4, 1, 4, 1}) {   \
-    assert(num_tokens_per_page_high == 35);                    \
-    assert(num_tokens_per_page_low == 35);                     \
-    assert(thread_group_size_v == 8);                          \
-    CALL_LAUNCHER(T, 4, 1, 4, 1, 35, 35, 8);                   \
-  } else {                                                     \
-    TORCH_CHECK(false, "Unsupported quant config: ", quant_config); \
+#define CALL_LAUNCHER_QUANT_CONFIG(T)                                      \
+  if (quant_config == std::vector<int>{8, 8, 8, 8, 1, 1, 1, 1}) {          \
+    assert(num_tokens_per_page_high == 24);                                \
+    assert(num_tokens_per_page_low == 24);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 8, 8, 8, 8, 1, 1, 1, 1, 24, 24, 8);                   \
+  } else if (quant_config == std::vector<int>{8, 4, 8, 4, 1, 2, 1, 2}) {   \
+    assert(num_tokens_per_page_high == 32);                                \
+    assert(num_tokens_per_page_low == 32);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 8, 4, 8, 4, 1, 2, 1, 2, 32, 32, 8);                   \
+  } else if (quant_config == std::vector<int>{8, 4, 8, 4, 1, 1, 1, 1}) {   \
+    assert(num_tokens_per_page_high == 32);                                \
+    assert(num_tokens_per_page_low == 32);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 8, 4, 8, 4, 1, 1, 1, 1, 32, 32, 8);                   \
+  } else if (quant_config == std::vector<int>{8, 2, 8, 2, 1, 1, 1, 1}) {   \
+    assert(num_tokens_per_page_high == 37);                                \
+    assert(num_tokens_per_page_low == 37);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 8, 2, 8, 2, 1, 1, 1, 1, 37, 37, 8);                   \
+  } else if (quant_config == std::vector<int>{8, 4, 4, 2, 1, 2, 2, 4}) {   \
+    assert(num_tokens_per_page_high == 32);                                \
+    assert(num_tokens_per_page_low == 52);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 8, 4, 4, 2, 1, 2, 2, 4, 32, 52, 8);                   \
+  } else if (quant_config == std::vector<int>{8, 4, 4, 2, 1, 1, 1, 1}) {   \
+    assert(num_tokens_per_page_high == 32);                                \
+    assert(num_tokens_per_page_low == 60);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 8, 4, 4, 2, 1, 1, 1, 1, 32, 60, 8);                   \
+  } else if (quant_config == std::vector<int>{4, 4, 4, 4, 1, 1, 1, 1}) {   \
+    assert(num_tokens_per_page_high == 46);                                \
+    assert(num_tokens_per_page_low == 46);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 4, 4, 4, 4, 1, 1, 1, 1, 46, 46, 8);                   \
+  } else if (quant_config == std::vector<int>{4, 2, 4, 2, 2, 4, 2, 4}) {   \
+    assert(num_tokens_per_page_high == 52);                                \
+    assert(num_tokens_per_page_low == 52);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 4, 2, 4, 2, 2, 4, 2, 4, 52, 52, 8);                   \
+  } else if (quant_config == std::vector<int>{4, 2, 4, 2, 1, 1, 1, 1}) {   \
+    assert(num_tokens_per_page_high == 60);                                \
+    assert(num_tokens_per_page_low == 60);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 4, 2, 4, 2, 1, 1, 1, 1, 60, 60, 8);                   \
+  } else if (quant_config == std::vector<int>{4, 1, 4, 1, 1, 1, 1, 1}) {   \
+    assert(num_tokens_per_page_high == 69);                                \
+    assert(num_tokens_per_page_low == 69);                                 \
+    assert(thread_group_size_v == 8);                                      \
+    CALL_LAUNCHER(T, 4, 1, 4, 1, 1, 1, 1, 1, 69, 69, 8);                   \
+  } else {                                                                 \
+    TORCH_CHECK(false, "Unsupported quant config: ", quant_config);        \
   }
 
 void sparse_paged_attention(
@@ -1309,6 +1404,10 @@ void sparse_paged_attention(
   int num_bits_v_high,
   int num_bits_k_low,
   int num_bits_v_low,
+  int num_chunks_k_high,
+  int num_chunks_v_high,
+  int num_chunks_k_low,
+  int num_chunks_v_low,
   int k_vec_size,
   int v_vec_size,
   int num_tokens_per_page_high,
@@ -1318,7 +1417,8 @@ void sparse_paged_attention(
   TORCH_CHECK(k_vec_size == K_VEC_SIZE, "k_vec_size should be ", K_VEC_SIZE);
   TORCH_CHECK(v_vec_size == V_VEC_SIZE, "v_vec_size should be ", V_VEC_SIZE);
 
-  std::vector<int> quant_config = {num_bits_k_high, num_bits_v_high, num_bits_k_low, num_bits_v_low};
+  std::vector<int> quant_config = {num_bits_k_high, num_bits_v_high, num_bits_k_low, num_bits_v_low,
+                                   num_chunks_k_high, num_chunks_v_high, num_chunks_k_low, num_chunks_v_low};
   int lowest_bits = *std::min_element(quant_config.begin(), quant_config.end());
   int thread_group_size_v = get_thread_group_size_v(lowest_bits);
   if (query.dtype() == at::ScalarType::Half) {

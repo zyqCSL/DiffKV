@@ -113,7 +113,7 @@ class BlockSpaceManager:
         num_gpu_blocks: int,
         num_cpu_blocks: int,
         quantized_kv_bits: List[Tuple[int, int]],
-        quantized_block_num_tokens: Dict[Tuple[int, int], int],
+        quantized_block_num_tokens: Dict[Tuple[int, int, int, int], int],
         num_layers: int,
         num_heads: int,
         num_kv_heads: int,
@@ -207,7 +207,7 @@ class BlockSpaceManager:
 
         # quant configs of each sequence. NOTE: now we only keep it in host memory
         self.quant_config_tables = torch.zeros(
-            (self.max_num_seqs, 4), dtype=torch.int16, device='cpu')
+            (self.max_num_seqs, 8), dtype=torch.int16, device='cpu')
         # self.quant_config_tables = torch.zeros(
         #     (self.max_num_seqs, 4), dtype=torch.int16, device='cuda')
         
@@ -262,6 +262,10 @@ class BlockSpaceManager:
         vbits_high: int,
         kbits_low: int,
         vbits_low: int,
+        kgroups_high: int,
+        vgroups_high: int,
+        kgroups_low: int,
+        vgroups_low: int,
         batch_compress_configs: List[List[float]],
     ) -> None:
         ''' NOTE: All sequences in the batch should share the same quant configs, so that we 
@@ -278,10 +282,10 @@ class BlockSpaceManager:
             raise ValueError(f"Out of metadata slots! {len(batch_seq_ids)} seqs required but only {len(self.free_slot_ids)} are free.")
 
         # check quant configs
-        assert (kbits_high, vbits_high) in self.quantized_kv_bits
-        assert (kbits_low, vbits_low) in self.quantized_kv_bits
+        assert (kbits_high, vbits_high, kgroups_high, vgroups_high) in self.quantized_kv_bits
+        assert (kbits_low, vbits_low, kgroups_low, vgroups_low) in self.quantized_kv_bits
         # we use high precision when allocating memory for prompt
-        quant = (kbits_high, vbits_high)
+        quant = (kbits_high, vbits_high, kgroups_high, vgroups_high)
         block_size = self.quant_to_block_token_num[quant]
         
         slot_ids = [-1] * len(batch_seq_ids)
@@ -315,7 +319,8 @@ class BlockSpaceManager:
 
         # fill in quant configs
         self.quant_config_tables[slot_ids] = torch.tensor(
-            [kbits_high, vbits_high, kbits_low, vbits_low], 
+            [kbits_high, vbits_high, kbits_low, vbits_low,
+             kgroups_high, vgroups_high, kgroups_low, vgroups_low], 
             dtype=torch.int16, device=self.quant_config_tables.device)
          # fill in compress_config
         self.compress_config_tables[slot_ids] = torch.tensor(
@@ -368,6 +373,10 @@ class BlockSpaceManager:
         vbits_high: int,
         kbits_low: int,
         vbits_low: int,
+        kgroups_high: int,
+        vgroups_high: int,
+        kgroups_low: int,
+        vgroups_low: int,
     ) -> bool:
         """Allocate a physical slot for a new token.
         Return true if mem copy is required
@@ -380,14 +389,15 @@ class BlockSpaceManager:
 
         # check all seqs share the same quant config
         ref_quant_config = torch.tensor(
-            [kbits_high, vbits_high, kbits_low, vbits_low], 
+            [kbits_high, vbits_high, kbits_low, vbits_low,
+             kgroups_high, vgroups_high, kgroups_low, vgroups_low], 
             dtype=torch.int16, device=self.quant_config_tables.device)
         assert torch.equal(
             self.quant_config_tables[slot_ids],
-            ref_quant_config.reshape((1, -1)).expand(len(slot_ids), 4))
+            ref_quant_config.reshape((1, -1)).expand(len(slot_ids), 8))
         
-        block_size_high = self.quant_to_block_token_num[(kbits_high, vbits_high)]
-        block_size_low = self.quant_to_block_token_num[(kbits_low, vbits_low)]
+        block_size_high = self.quant_to_block_token_num[(kbits_high, vbits_high, kgroups_high, vgroups_high)]
+        block_size_low = self.quant_to_block_token_num[(kbits_low, vbits_low, kgroups_low, vgroups_low)]
         
         # * 2 for two precisions
         free_block_pos = torch.zeros(
@@ -623,10 +633,6 @@ class BlockSpaceManager:
             self.accum_kv_lens += self.kv_len_tables[slot_id]
             self.accum_block_nums += self.block_num_tables[slot_id]
             
-            # TODO: remove later
-            # print('freed kv_len = ', torch.sum(self.kv_len_tables[slot_id], dim=(0, 1)))
-            # print('freed block_num = ', torch.sum(self.block_num_tables[slot_id], dim=(0, 1)))
-
         # write freed blocks to free_blocks
         # NOTE: 2 for two quant configs
         free_block_pos = torch.zeros(
@@ -677,6 +683,10 @@ class BlockSpaceManager:
         vbits_high: int,
         kbits_low: int,
         vbits_low: int,
+        kgroups_high: int,
+        vgroups_high: int,
+        kgroups_low: int,
+        vgroups_low: int,
     ) -> None:
         ''' NOTE: kv_len_tables should be updated directly in the attention kernel
         '''
@@ -695,14 +705,15 @@ class BlockSpaceManager:
         # check all seqs share the same quant config
         # TODO: remove this for performance profiling
         ref_quant_config = torch.tensor(
-            [kbits_high, vbits_high, kbits_low, vbits_low], 
+            [kbits_high, vbits_high, kbits_low, vbits_low,
+             kgroups_high, vgroups_high, kgroups_low, vgroups_low], 
             dtype=torch.int16, device=self.quant_config_tables.device)
         assert torch.equal(
             self.quant_config_tables[slot_ids],
-            ref_quant_config.reshape((1, -1)).expand(len(slot_ids), 4))
+            ref_quant_config.reshape((1, -1)).expand(len(slot_ids), 8))
 
-        block_size_high = self.quant_to_block_token_num[(kbits_high, vbits_high)]
-        block_size_low = self.quant_to_block_token_num[(kbits_low, vbits_low)]
+        block_size_high = self.quant_to_block_token_num[(kbits_high, vbits_high, kgroups_high, vgroups_high)]
+        block_size_low = self.quant_to_block_token_num[(kbits_low, vbits_low, kgroups_low, vgroups_low)]
         
         # number of used block per head
         block_nums = torch.zeros(

@@ -89,7 +89,7 @@ class MMLUProCoTDataset(LLMDataset):
         if self.sample_percent < 100:
             self.test_set = self.test_set.select(
                     range(0, len(self.test_set), 100 // self.sample_percent))
-        
+            
         self.max_tokens = max_tokens
         self.choices = [
             "A",

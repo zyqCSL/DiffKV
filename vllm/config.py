@@ -326,21 +326,23 @@ class CacheConfig:
         self.value_vec_size = value_vec_size
         self.num_thread_groups_k = num_thread_groups_k
         self.vec_bytes = 2 # each vec is 16 bits long
-        # kv cache quantization (key, value) #bits
+        # kv cache quantization (kbits, vbits, kmeta_num, vmeta_num)
         self.quantized_kv_bits = [
-            (8, 8),
-            (8, 4),
-            (8, 2),
-            (4, 4),
-            (4, 2),
-            (4, 1),
+            (8, 8, 1, 1),
+            (8, 4, 1, 2),
+            (8, 4, 1, 1),
+            (8, 2, 1, 1),
+            (4, 4, 1, 1),
+            (4, 2, 2, 4),
+            (4, 2, 1, 1),
+            (4, 1, 1, 1),
         ]
         # hetero kvs are used to compute page size
         self.hetero_kv_bits = [
-            (8, 4),
-            (8, 2),
-            (4, 2),
-            (4, 1),
+            (8, 4, 1, 2),
+            (8, 4, 1, 1),
+            (4, 2, 2, 4),
+            (4, 2, 1, 1),
         ]
 
         assert set(self.hetero_kv_bits).issubset(
@@ -387,12 +389,13 @@ class CacheConfig:
     def _compute_quantized_kv_head_bytes(self, head_size: int) -> None:
         # key & val, scale & offset for both key & val ((2 + 2) * 2), score & index (4 bytes)
         assert head_size % 8 == 0
-        for kbits, vbits in self.quantized_kv_bits:
-            assert (kbits, vbits) not in self._quantized_kv_head_bytes
-            self._quantized_kv_head_bytes[(kbits, vbits)] = [
+        for kbits, vbits, kmeta, vmeta in self.quantized_kv_bits:
+            assert (kbits, vbits, kmeta, vmeta) not in self._quantized_kv_head_bytes
+            self._quantized_kv_head_bytes[(kbits, vbits, kmeta, vmeta)] = [
                 kbits * head_size // 8,   # kbytes
                 vbits * head_size // 8,   # vbytes
-                4,  # scaling & zero_point, both in FP16
+                4 * kmeta,  # scaling & zero_point, both in FP16 -> 4bytes
+                4 * vmeta,  
                 8,  # index & score, in int32 & FP32
             ]
 
@@ -402,6 +405,8 @@ class CacheConfig:
         head_size: int,
         kbits: int,
         vbits: int,
+        kmeta: int,
+        vmeta: int,
     ) -> int:
         # each pack is 16 bits (INT16)
         assert 16 % kbits == 0 and 16 % vbits == 0, (kbits, vbits)
@@ -416,11 +421,12 @@ class CacheConfig:
         assert k_num_packs % self.key_vec_size == 0
 
         # effective data size
-        k_bytes, v_bytes, quant_bytes, meta_bytes = self._quantized_kv_head_bytes[(kbits, vbits)]
+        k_bytes, v_bytes, k_quant_bytes, v_quant_bytes, meta_bytes = \
+            self._quantized_kv_head_bytes[(kbits, vbits, kmeta, vmeta)]
 
         # data (padded) + quant_meta (padded)
         sum_kbytes = _divide_round_up(num_tokens * k_bytes, self.memory_align_bytes) * self.memory_align_bytes + \
-                     _divide_round_up(num_tokens * quant_bytes, self.memory_align_bytes) * self.memory_align_bytes
+                     _divide_round_up(num_tokens * k_quant_bytes, self.memory_align_bytes) * self.memory_align_bytes
         sum_kbytes = _divide_round_up(sum_kbytes, self.memory_align_bytes_kv) * self.memory_align_bytes_kv
 
         # NOTE: val shape [NUM_TOKENS/VEC_SIZE, NUM_PACKS, VEC_SIZE]
@@ -429,7 +435,7 @@ class CacheConfig:
 
         # data (padded) + quant_meta (padded)
         sum_vbytes = _divide_round_up(padded_v_vec_bytes, self.memory_align_bytes) * self.memory_align_bytes + \
-                     _divide_round_up(num_tokens * quant_bytes, self.memory_align_bytes) * self.memory_align_bytes
+                     _divide_round_up(num_tokens * v_quant_bytes, self.memory_align_bytes) * self.memory_align_bytes
 
         sum_meta_bytes = _divide_round_up(
             num_tokens * meta_bytes, self.memory_align_bytes) * self.memory_align_bytes
@@ -446,13 +452,17 @@ class CacheConfig:
         head_size: int,
         kbits: int,
         vbits: int,
+        kmeta: int,
+        vmeta: int,
     ) -> int:
         assert block_bytes % self.memory_align_bytes == 0
-        k_bytes, v_bytes, quant_bytes, meta_bytes = self._quantized_kv_head_bytes[(kbits, vbits)]
+        k_bytes, v_bytes, k_quant_bytes, v_quant_bytes, meta_bytes = \
+            self._quantized_kv_head_bytes[(kbits, vbits, kmeta, vmeta)]
 
-        num_tokens = block_bytes // (k_bytes + v_bytes + 2 * quant_bytes + meta_bytes)
+        num_tokens = block_bytes // (k_bytes + v_bytes +  k_quant_bytes + v_quant_bytes + meta_bytes)
         while num_tokens > 0:
-            padded_block_bytes = self._block_bytes_from_tokens(num_tokens, head_size, kbits, vbits)
+            padded_block_bytes = self._block_bytes_from_tokens(num_tokens, head_size, 
+                                                               kbits, vbits, kmeta, vmeta)
             # print(f'block_bytes = {block_bytes}, num_tokens = {num_tokens}, padded_block_bytes = {padded_block_bytes}')
             if padded_block_bytes <= block_bytes:
                 break
@@ -466,25 +476,33 @@ class CacheConfig:
         num_tokens: int,
         kbits: int,
         vbits: int,
+        kmeta: int,
+        vmeta: int,
     ) -> float:
-        k_bytes, v_bytes, quant_bytes, meta_bytes =self._quantized_kv_head_bytes[(kbits, vbits)]
-        total_bytes = num_tokens * (k_bytes + v_bytes + 2 * quant_bytes + meta_bytes)
+        k_bytes, v_bytes, k_quant_bytes, v_quant_bytes, meta_bytes =\
+            self._quantized_kv_head_bytes[(kbits, vbits, kmeta, vmeta)]
+        total_bytes = num_tokens * (k_bytes + v_bytes + k_quant_bytes + v_quant_bytes + meta_bytes)
         return 1 - total_bytes / block_bytes
 
     def compute_cache_block_size(
         self,
         model_config: ModelConfig,
         min_block_bytes: int = 800,
-        max_block_bytes: int = 4000,
-    ) -> None:
+        max_block_bytes: int = 8000,
+    ) -> Tuple[int, int]:
         ''' Find the block size with the least fragmentation across all quantized configs
             return
                 block_bytes, block_size (number of 16-bit elemets)
         '''
+        
+        print(f'[DEBUG] min_block_bytes = {min_block_bytes}, max_block_bytes = {max_block_bytes}')
+        
         dtype_size = _get_dtype_size(model_config.dtype)
         assert dtype_size == 2 # FP16 or BF16
         head_size = model_config.get_head_size()
         self._compute_quantized_kv_head_bytes(head_size)
+        
+        # print(f'[DEBUG] head_size = {head_size}')
 
         # use heteo kv bits to compute the block size
         min_ratio = 500
@@ -495,12 +513,15 @@ class CacheConfig:
             # print(f'** block_bytes = {_block_bytes}')
             res_ratio = 0
             # ignored = False
-            for (kbits, vbits) in self.hetero_kv_bits:
+            for (kbits, vbits, kmeta, vmeta) in self.hetero_kv_bits:
                 num_tokens = self._block_tokens_from_bytes(
                     block_bytes=block_bytes,
                     head_size=head_size,
                     kbits=kbits,
-                    vbits=vbits)
+                    vbits=vbits,
+                    kmeta=kmeta,
+                    vmeta=vmeta,
+                )
                 # # if num_tokens % self.num_thread_groups_k < self.num_thread_groups_k // 2:
                 # if num_tokens % self.num_thread_groups_k != 0:
                 #     # print(f'{block_bytes} k{kbits}v{vbits} tokens={num_tokens} ignored due to excessive bubbles')
@@ -511,7 +532,10 @@ class CacheConfig:
                     block_bytes=block_bytes,
                     num_tokens=num_tokens,
                     kbits=kbits,
-                    vbits=vbits)
+                    vbits=vbits,
+                    kmeta=kmeta,
+                    vmeta=vmeta,
+                )
                 # print(f'****** k{kbits}v{vbits}, num_tokens = {num_tokens}, res_ratio = {r}')
                 res_ratio = max(r, res_ratio)
             # if ignored:
@@ -539,15 +563,17 @@ class CacheConfig:
         self.block_size = opt_block_size
 
         # compute effective block size (number of elements in each block)
-        for kbits, vbits in self.quantized_kv_bits:
-            self.quantized_block_num_tokens[(kbits, vbits)] = self._block_tokens_from_bytes(
+        for kbits, vbits, kmeta, vmeta in self.quantized_kv_bits:
+            self.quantized_block_num_tokens[(kbits, vbits, kmeta, vmeta)] = self._block_tokens_from_bytes(
                 block_bytes=self.block_bytes,
                 head_size=head_size,
                 kbits=kbits,
-                vbits=vbits)
+                vbits=vbits,
+                kmeta=kmeta,
+                vmeta=vmeta,
+                )
 
         print(f'quantized tokens per block = {self.quantized_block_num_tokens}')
-
         return self.block_bytes, self.block_size
 
 def _get_dtype_bits(dtype: torch.dtype) -> int:

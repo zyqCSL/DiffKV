@@ -8,6 +8,7 @@ import pandas as pd
 from typing import List, Tuple, Optional, Union
 import numpy as np
 import time
+import torch
 
 from vllm import EngineArgs, LLMEngine, RequestOutput
 
@@ -16,7 +17,7 @@ from vllm.dataset import (
     MMLUCoTDataset,
 )
 
-from util import maybe_destroy_process_group
+from util import maybe_destroy_process_group, get_quant_configs_and_groups
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -36,6 +37,7 @@ def add_mmlu_cot_questions(
     dataset: MMLUCoTDataset,
     questions: List[MMLUCoTQuestion],
     quant_configs: List[int],
+    quant_groups: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -46,6 +48,7 @@ def add_mmlu_cot_questions(
             prompt=prompt,
             sampling_params=SamplingParams,
             quant_configs=quant_configs, 
+            quant_groups=quant_groups,
             compress_configs=compress_configs,
         )
         dataset.register_request(question, str(REQUEST_ID))
@@ -98,14 +101,10 @@ def run_mmlu_cot_dataset(
     # # for debug 
     # dataset.data_ptr = 287113
     
-    if kbits_high == kbits_low and vbits_high == vbits_low:
-        quant_configs = [kbits_high, vbits_high]
-    else:
-        quant_configs = [kbits_high, vbits_high, 
-                         kbits_low, vbits_low]
-    # compress_configs = [kv_prune_thresh, kv_quant_thresh, 
-    #                     kv_prune_ratio, kv_quant_ratio]
+    quant_configs, quant_groups = get_quant_configs_and_groups(
+        kbits_high, vbits_high, kbits_low, vbits_low)
     compress_configs = [kv_prune_thresh, kv_quant_thresh]
+        
     # disable real-time perf logging
     engine.log_stats = not quiet
     
@@ -123,7 +122,7 @@ def run_mmlu_cot_dataset(
         all_questions = all_questions[batch_size:]
         
         add_mmlu_cot_questions(
-            engine, dataset, questions, quant_configs, compress_configs)
+            engine, dataset, questions, quant_configs, quant_groups, compress_configs)
 
         while engine.has_unfinished_requests():
             request_outputs: List[RequestOutput] = engine.step()

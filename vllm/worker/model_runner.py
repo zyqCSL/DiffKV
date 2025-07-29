@@ -144,10 +144,16 @@ class ModelRunner:
 
         quant_config_high = (
             seq_group_metadata_list[0].num_bits_k_high,
-            seq_group_metadata_list[0].num_bits_v_high)
+            seq_group_metadata_list[0].num_bits_v_high,
+            seq_group_metadata_list[0].num_chunks_k_high,
+            seq_group_metadata_list[0].num_chunks_v_high,
+        )
         quant_config_low = (
             seq_group_metadata_list[0].num_bits_k_low,
-            seq_group_metadata_list[0].num_bits_v_low)
+            seq_group_metadata_list[0].num_bits_v_low,
+            seq_group_metadata_list[0].num_chunks_k_low,
+            seq_group_metadata_list[0].num_chunks_v_low,
+        )
 
         # We don't need input_positions as it's obvious for prompt
         if self.cache_config is not None:
@@ -177,6 +183,10 @@ class ModelRunner:
             num_bits_v_high=seq_group_metadata_list[0].num_bits_v_high,
             num_bits_k_low=seq_group_metadata_list[0].num_bits_k_low,
             num_bits_v_low=seq_group_metadata_list[0].num_bits_v_low,
+            num_chunks_k_high=seq_group_metadata_list[0].num_chunks_k_high,
+            num_chunks_v_high=seq_group_metadata_list[0].num_chunks_v_high,
+            num_chunks_k_low=seq_group_metadata_list[0].num_chunks_k_low,
+            num_chunks_v_low=seq_group_metadata_list[0].num_chunks_v_low,
             compress_config_tables=compress_config_tables,
             key_vec_size=key_vec_size,
             val_vec_size=val_vec_size,
@@ -250,13 +260,19 @@ class ModelRunner:
         input_tokens = torch.tensor(input_tokens, dtype=torch.int, device=device)
         input_positions = torch.tensor(input_positions, dtype=torch.int, device=device)
         slot_ids = torch.tensor(slot_ids, dtype=torch.int, device=device)
-
+        
         quant_config_high = (
             seq_group_metadata_list[0].num_bits_k_high,
-            seq_group_metadata_list[0].num_bits_v_high)
+            seq_group_metadata_list[0].num_bits_v_high,
+            seq_group_metadata_list[0].num_chunks_k_high,
+            seq_group_metadata_list[0].num_chunks_v_high,
+        )
         quant_config_low = (
             seq_group_metadata_list[0].num_bits_k_low,
-            seq_group_metadata_list[0].num_bits_v_low)
+            seq_group_metadata_list[0].num_bits_v_low,
+            seq_group_metadata_list[0].num_chunks_k_low,
+            seq_group_metadata_list[0].num_chunks_v_low,
+        )
 
         if self.cache_config is not None:
             num_tokens_per_block_high = self.cache_config.quantized_block_num_tokens[quant_config_high]
@@ -279,6 +295,10 @@ class ModelRunner:
             num_bits_v_high=seq_group_metadata_list[0].num_bits_v_high,
             num_bits_k_low=seq_group_metadata_list[0].num_bits_k_low,
             num_bits_v_low=seq_group_metadata_list[0].num_bits_v_low,
+            num_chunks_k_high=seq_group_metadata_list[0].num_chunks_k_high,
+            num_chunks_v_high=seq_group_metadata_list[0].num_chunks_v_high,
+            num_chunks_k_low=seq_group_metadata_list[0].num_chunks_k_low,
+            num_chunks_v_low=seq_group_metadata_list[0].num_chunks_v_low,
             compress_config_tables=compress_config_tables,
             key_vec_size=key_vec_size,
             val_vec_size=val_vec_size,
@@ -491,6 +511,10 @@ class ModelRunner:
                 num_bits_v_high=None,
                 num_bits_k_low=None,
                 num_bits_v_low=None,
+                num_chunks_k_high=None,
+                num_chunks_v_high=None,
+                num_chunks_k_low=None,
+                num_chunks_v_low=None,
             )
             seqs.append(seq)
 

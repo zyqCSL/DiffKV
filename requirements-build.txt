@@ -2,6 +2,5 @@
 ninja
 packaging
 setuptools>=69.5.1
-torch == 2.6.0  # H20 GPU
-# nvidia-cublas-cu12 == 12.5.3.2  # H20 GPU
+torch == 2.6.0
 wheel

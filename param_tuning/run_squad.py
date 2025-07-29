@@ -18,7 +18,7 @@ from vllm.dataset import (
     SquadDatasetV2,
 )
 
-from util import maybe_destroy_process_group
+from util import maybe_destroy_process_group, get_quant_configs_and_groups
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -38,6 +38,7 @@ def add_squad_requests(
     dataset: SquadDataset,
     questions: List[SquadQuestion],
     quant_configs: List[int],
+    quant_groups: List[int],
     compress_configs: List[float],
 ) -> None:
     global REQUEST_ID
@@ -49,6 +50,7 @@ def add_squad_requests(
             prompt=prompt, 
             sampling_params=sampling_params,
             quant_configs=quant_configs, 
+            quant_groups=quant_groups,
             compress_configs=compress_configs,
         )
         dataset.register_request(question, str(REQUEST_ID))
@@ -99,13 +101,8 @@ def run_squad_dataset(
     # # for debug 
     # dataset.data_ptr = 287113
     
-    if kbits_high == kbits_low and vbits_high == vbits_low:
-        quant_configs = [kbits_high, vbits_high]
-    else:
-        quant_configs = [kbits_high, vbits_high, 
-                         kbits_low, vbits_low]
-    # compress_configs = [kv_prune_thresh, kv_quant_thresh, 
-    #                     kv_prune_ratio, kv_quant_ratio]
+    quant_configs, quant_groups = get_quant_configs_and_groups(
+        kbits_high, vbits_high, kbits_low, vbits_low)
     compress_configs = [kv_prune_thresh, kv_quant_thresh]
     
     # disable real-time perf logging
@@ -125,7 +122,7 @@ def run_squad_dataset(
         all_questions = all_questions[batch_size:]
         
         add_squad_requests(
-            engine, dataset, questions, quant_configs, compress_configs)
+            engine, dataset, questions, quant_configs, quant_groups, compress_configs)
 
         while engine.has_unfinished_requests():
             request_outputs: List[RequestOutput] = engine.step()
@@ -183,8 +180,9 @@ def main(args: argparse.Namespace):
         kv_quant_thresh=args.kv_quant_thresh,
         label=args.data_label)
     print(f'--- time elapsed = {time.time() - t0}s ---')
-
+    
     maybe_destroy_process_group()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

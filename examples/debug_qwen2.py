@@ -7,7 +7,8 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 from vllm import LLM, SamplingParams
 
-MAX_TOKENS = 1024
+# MAX_TOKENS = 32 * 1024
+MAX_TOKENS = 256
 
 model = LLM(
     # '/data1/modelscope/Qwen2.5-7B-Instruct',
@@ -15,22 +16,21 @@ model = LLM(
     # '/data1/modelscope/Qwen2.5-72B-Instruct',
     # '/data1/modelscope/QwQ-32B',
     # '/data1/modelscope/Qwen3-14B',
-    # '/data1/modelscope/Qwen3-8B',
-    # '/data1/modelscope/Qwen3-8B-AWQ',
+    '/data1/modelscope/Qwen3-8B-AWQ',
     # '/data1/modelscope/Qwen3-8B-FP8',
-    # '/data1/modelscope/Qwen3-30B-A3B',
     # '/data1/modelscope/Qwen3-30B-A3B-AWQ',
-    '/data1/modelscope/Qwen3-30B-A3B-FP8',
     dtype='float16',
     gpu_memory_utilization=0.8,
     load_format='safetensors',
     kv_buffer_size=64,
-    tensor_parallel_size=2,
+    tensor_parallel_size=1,
     enforce_eager=True)
 
 sampling_params = SamplingParams(
     temperature=0.6, top_p=0.95, min_p=0.0, 
-    max_tokens=MAX_TOKENS, stop=["<\think>"])
+    max_tokens=MAX_TOKENS, 
+    # stop=["<\think>"],
+    )
 
 # gives wrong answer in the 1st batch
 problems = [
@@ -68,20 +68,47 @@ quant_configs = [
     # [4, 1],
 ]
 
-# [prune_thresh (alpha_low), quant_thresh (alpha_high)]
+# [k_ngroups_high, v_ngroups_high, k_ngroups_low, v_ngroups_low]
+quant_groups = [
+    [1, 2, 2, 4],
+]
+
+
+# [alpha_prune, alpha_quant]
 compress_config = [0.0, 1.0]
+
+
+# # [kbits_high, vbits_high, kbits_low, vbits_low]
+# quant_configs = [
+#     # [8, 8, 8, 4],
+#     # [8, 4, 4, 2],
+#     # [8, 8, 4, 4],
+#     [8, 8],
+#     # [8, 4],
+#     # [4, 4, 4, 2],
+#     # [4, 4],
+#     # [4, 2],
+#     # [4, 1],
+# ]
+
+# # [k_ngroups_high, v_ngroups_high, k_ngroups_low, v_ngroups_low]
+# quant_groups = [
+#     [1, 1],
+# ]
+# # [alpha_prune, alpha_quant]
 # compress_config = [0.0, 0.0]
 
 TESTS = 1
 for _ in range(TESTS):
-    for quant_config in quant_configs:
+    for quant_config, quant_group in zip(quant_configs, quant_groups):
         print(f"Quant config: {quant_config}")
         if len(quant_config) == 2:
             _compress_config = [0.0, 0.0]
         else:
             _compress_config = compress_config
         outputs = model.generate(prompts, sampling_params, 
-                                 quant_config, _compress_config)
+                                 quant_config, quant_group,
+                                 _compress_config)
         for output in outputs:
             prompt = output.prompt
             generated_text = output.outputs[0].text
