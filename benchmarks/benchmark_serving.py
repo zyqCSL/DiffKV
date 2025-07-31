@@ -4,7 +4,7 @@ On the server side, run:
     python -m vllm.entrypoints.api_server \
         --model <your_model> \
         --port 8000 \
-        --kv-buffer-size 32
+        --kv-buffer-size 64
 
 On the client side, run:
     python benchmark_serving.py \

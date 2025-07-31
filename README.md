@@ -115,7 +115,7 @@ The `benchmarks/benchmark_serving.py` script measures online serving latency usi
 python -m vllm.entrypoints.api_server \
   --model <your_model> \
   --port 8000 \
-  --kv-buffer-size 32
+  --kv-buffer-size 64
 ```
 
 **2. Run the Client**

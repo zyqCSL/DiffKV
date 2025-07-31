@@ -49,7 +49,7 @@ def run_diffkv(
         trust_remote_code=True,
         dtype='float16',
         enforce_eager=True,
-        kv_buffer_size=32,
+        kv_buffer_size=64,
     )
 
     for prompt, _, max_output_len in requests:
