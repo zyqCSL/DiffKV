@@ -4,13 +4,13 @@ DiffKV: Differentiated KV Cache Management for LLM Inference
 
 ---
 
-_**DiffKV**_ is an LLM inference framework that enables efficent KV cache compression by jointly exploiting three levels of differentiation in the KV cache: 
+_**DiffKV**_ is an LLM inference framework that enables efficent KV cache compression by jointly exploiting three levels of differentiation in the KV cache:
 
 - The differing impact of keys and values on attention computation.
 
 - The varying importance of tokens.
 
-- The diverse dynamic sparsity patterns across attention heads. 
+- The diverse dynamic sparsity patterns across attention heads.
 
 These levels of differentiation introduce **irregular memory usage patterns across different requests and attention heads**, posing significant scalability challenges for memory management. To address these challenges, DiffKV proposes an **on-GPU memory manager** that compacts fragmented free memory list into contiguous regions in parallel, effectively translating sparsity in the KV cache into performance gains.
 
@@ -70,7 +70,7 @@ Similarly:
 > export DIFFKV_LOG_DIR=${PATH_TO_DiffKV}/logs
 > ```
 > Or modify the default path directly in the script:
-> ```python  
+> ```python
 > LOG_DIR = os.getenv('DIFFKV_LOG_DIR', '{PATH_TO_DiffKV}/logs')
 > ```
 
@@ -83,7 +83,7 @@ To quickly verify the artifact setup:
     ```bash
     mkdir -p DiffKV/logs
    ```
-  
+
 2. In the `param_tuning/` folder, run the script:
     ```bash
     ./try_small_models.sh
@@ -96,6 +96,38 @@ To quickly verify the artifact setup:
     ```
    The summary will be saved in: `DiffKV/logs/per_token_thresh_compress_summary/`.
 
+
+### Performance Benchmark
+
+The `benchmarks/` directory contains scripts for evaluating DiffKV's performance.
+
+#### Throughput
+
+To reproduce the throughput numbers of DiffKV on the five models evaluated in the paper, you can use the `benchmark_throughput.sh` script. The threshold numbers used are the same as those reported in the paper.
+
+#### Online Serving Latency
+
+The `benchmarks/benchmark_serving.py` script measures online serving latency using a client-server setup.
+
+**1. Start the Server**
+
+```bash
+python -m vllm.entrypoints.api_server \
+  --model <your_model> \
+  --port 8000 \
+  --kv-buffer-size 32
+```
+
+**2. Run the Client**
+
+```bash
+python benchmarks/benchmark_serving.py \
+  --model <your_model> \
+  --port 8000 \
+  --request-rate <request_rate> \
+  --kv-prune-thresh <kv_prune_thresh> \
+  --kv-quant-thresh <kv_quant_thresh>
+```
 
 ## Quantization Configuration Guide
 
@@ -240,9 +272,8 @@ To add or modify quantization options, you must update several components in loc
 
 Keep all components synchronized. Any mismatch between code, assertions, and computed values will cause runtime errors.
 
-
 ## Citation
-If you use DiffKV for your research, please cite our [paper](https://arxiv.org/pdf/2412.03131):
+If you use DiffKV for your research, please cite our [paper](https://arxiv.org/abs/2412.03131):
 ```bibtex
 @inproceedings{zhang2025diffkv,
   title={DiffKV: Differentiated Memory Management for Large Language Models with Parallel KV Compaction},

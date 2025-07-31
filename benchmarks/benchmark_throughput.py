@@ -65,6 +65,7 @@ def run_diffkv(
             prompt_token_ids=None,
             sampling_params=sampling_params,
             quant_configs=quant_config,
+            quant_groups=[1,1,1,1],
             compress_configs=compress_config,
         )
 

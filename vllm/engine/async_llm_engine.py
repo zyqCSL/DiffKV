@@ -349,6 +349,7 @@ class AsyncLLMEngine:
         prompt: Optional[str],
         sampling_params: SamplingParams,
         quant_configs: List[int],
+        quant_groups: List[int],
         compress_configs: List[float],
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
@@ -382,6 +383,7 @@ class AsyncLLMEngine:
             prompt=prompt,
             sampling_params=sampling_params,
             quant_configs=quant_configs,
+            quant_groups=quant_groups,
             compress_configs=compress_configs,
             prompt_token_ids=prompt_token_ids,
             arrival_time=arrival_time)
@@ -393,6 +395,7 @@ class AsyncLLMEngine:
         prompt: Optional[str],
         sampling_params: SamplingParams,
         quant_configs: List[int],
+        quant_groups: List[int],
         compress_configs: List[float],
         request_id: str,
         prompt_token_ids: Optional[List[int]] = None
@@ -424,6 +427,7 @@ class AsyncLLMEngine:
                                             prompt,
                                             sampling_params,
                                             quant_configs,
+                                            quant_groups,
                                             compress_configs,
                                             prompt_token_ids=prompt_token_ids,
                                             arrival_time=arrival_time)

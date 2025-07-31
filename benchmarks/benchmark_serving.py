@@ -1,6 +1,6 @@
 """Benchmark online serving latency.
 
-On the server side, run one of the following commands:
+On the server side, run:
     python -m vllm.entrypoints.api_server \
         --model <your_model> \
         --port 8000 \
@@ -72,6 +72,7 @@ async def send_request(
         "ignore_eos": True,
         "stream": False,
         "quant_config": quant_config,
+        "quant_groups": [1,1,1,1],
         "compress_config": compress_config,
     }
 

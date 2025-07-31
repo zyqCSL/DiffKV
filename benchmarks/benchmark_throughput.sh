@@ -1,10 +1,16 @@
-export PYTHONPATH=/home/yuwei/DiffKV
-export CUDA_VISIBLE_DEVICES=2,3
+# Set PYTHONPATH to the project's root directory
+export PYTHONPATH=
+
+# Set the HuggingFace model download directory
+export HF_DOWNLOAD_DIR=
+
+# Need 4 GPUs to run Llama3-70B
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 # Llama3-8B
 python benchmark_throughput.py \
     --model meta-llama/Meta-Llama-3-8B-Instruct \
-    --download-dir /data1/huggingface \
+    --download-dir $HF_DOWNLOAD_DIR \
     --num-requests 512 \
     --max-output-len 4096 \
     --kbits-high 8 \
@@ -17,7 +23,8 @@ python benchmark_throughput.py \
 
 # Qwen2.5-7B
 python benchmark_throughput.py \
-    --model /data1/modelscope/Qwen2.5-7B-Instruct \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --download-dir $HF_DOWNLOAD_DIR \
     --num-requests 512 \
     --max-output-len 4096 \
     --kbits-high 8 \
@@ -31,8 +38,8 @@ python benchmark_throughput.py \
 # Llama3-70B
 python benchmark_throughput.py \
     --model meta-llama/Meta-Llama-3-70B-Instruct \
-    --download-dir /data1/huggingface \
-    --tensor-parallel-size 2 \
+    --download-dir $HF_DOWNLOAD_DIR \
+    --tensor-parallel-size 4 \
     --num-requests 512 \
     --max-output-len 4096 \
     --kbits-high 8 \
@@ -45,8 +52,9 @@ python benchmark_throughput.py \
 
 # Qwen2.5-32B
 python benchmark_throughput.py \
-    --model /data1/modelscope/Qwen2.5-32B-Instruct \
-    --tensor-parallel-size 1 \
+    --model Qwen/Qwen2.5-32B-Instruct \
+    --download-dir $HF_DOWNLOAD_DIR \
+    --tensor-parallel-size 2 \
     --num-requests 512 \
     --max-output-len 8192 \
     --kbits-high 8 \
@@ -59,10 +67,11 @@ python benchmark_throughput.py \
 
 # QwQ-32B
 python benchmark_throughput.py \
-    --model /data1/modelscope/QwQ-32B \
-    --tensor-parallel-size 1 \
-    --num-requests 16384 \
-    --max-output-len 32 \
+    --model Qwen/QwQ-32B \
+    --download-dir $HF_DOWNLOAD_DIR \
+    --tensor-parallel-size 2 \
+    --num-requests 512 \
+    --max-output-len 16384 \
     --kbits-high 8 \
     --vbits-high 4 \
     --kbits-low 4 \
