@@ -35,10 +35,19 @@ async def generate(request: Request) -> Response:
     request_dict = await request.json()
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
+    quant_config = request_dict.pop("quant_config", [8, 4, 4, 2])
+    quant_groups = request_dict.pop("quant_groups", [1, 1, 1, 1])
+    compress_config = request_dict.pop("compress_config", [0.0, 0.0])
     sampling_params = SamplingParams(**request_dict)
+
     request_id = random_uuid()
 
-    results_generator = engine.generate(prompt, sampling_params, request_id)
+    results_generator = engine.generate(prompt,
+                                        sampling_params,
+                                        quant_config,
+                                        quant_groups,
+                                        compress_config,
+                                        request_id)
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
