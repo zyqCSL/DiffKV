@@ -183,4 +183,5 @@ _build/
 *_hip*
 
 tmp*
-log*
+log_*
+logs/
